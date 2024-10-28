@@ -83,5 +83,5 @@ func RegisterProviders() {
 
 	// Register a mock provider for testing
 	mockProvider := NewMockProvider()
-	RegisterProvider("mock", mockProvider
+	RegisterProvider("mock", mockProvider)
 }

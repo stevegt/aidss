@@ -250,12 +250,12 @@ func TestSummarizePath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Mock getSummary
-	originalGetSummary := getSummary
-	getSummary = func(text string) (string, error) {
-		return "Summarized text", nil
+	// Create the mock client
+	var errClient error
+	client, errClient = llm.NewClient("mock-model")
+	if errClient != nil {
+		t.Fatalf("Error creating mock client: %v", errClient)
 	}
-	defer func() { getSummary = originalGetSummary }()
 
 	// Call summarizePath
 	summarizePath(tempDir)
@@ -267,8 +267,8 @@ func TestSummarizePath(t *testing.T) {
 		t.Fatalf("Expected summary.txt to be created, got error: %v", err)
 	}
 
-	if string(data) != "Summarized text" {
-		t.Errorf("Expected 'Summarized text', got '%s'", string(data))
+	if string(data) != "This is a mock response." {
+		t.Errorf("Expected 'This is a mock response.', got '%s'", string(data))
 	}
 }
 
@@ -348,12 +348,12 @@ func TestAddWatcherRecursive(t *testing.T) {
 }
 
 func TestGetSummary(t *testing.T) {
-	// Mock getLLMResponse
-	originalGetLLMResponse := getLLMResponse
-	getLLMResponse = func(messages []llm.Message) (string, error) {
-		return "Mock summary", nil
+	// Create the mock client
+	var errClient error
+	client, errClient = llm.NewClient("mock-model")
+	if errClient != nil {
+		t.Fatalf("Error creating mock client: %v", errClient)
 	}
-	defer func() { getLLMResponse = originalGetLLMResponse }()
 
 	// Call getSummary
 	text := "Conversation text"
@@ -362,8 +362,8 @@ func TestGetSummary(t *testing.T) {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
-	if summary != "Mock summary" {
-		t.Errorf("Expected 'Mock summary', got '%s'", summary)
+	if summary != "This is a mock response." {
+		t.Errorf("Expected 'This is a mock response.', got '%s'", summary)
 	}
 }
 

@@ -77,27 +77,32 @@ type OpenAI struct {
 }
 
 // OpenAIProvider implements Provider interface
-type OpenAIProvider struct{}
+type OpenAIProvider struct {
+	apiKey string
+}
 
 // NewOpenAIProvider creates a new instance of OpenAIProvider
 func NewOpenAIProvider() *OpenAIProvider {
-	return &OpenAIProvider{}
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		// Return nil if API key is not set
+		return nil
+	}
+
+	return &OpenAIProvider{
+		apiKey: apiKey,
+	}
 }
 
 // NewClient returns a new OpenAI client for the given model
 func (p *OpenAIProvider) NewClient(modelName string) (Client, error) {
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" {
-		return nil, errors.New("OPENAI_API_KEY environment variable must be set")
-	}
-
 	model, ok := openAIModels[modelName]
 	if !ok {
 		return nil, errors.New("unsupported model: " + modelName)
 	}
 
 	return &OpenAI{
-		apiKey: apiKey,
+		apiKey: p.apiKey,
 		model:  model,
 	}, nil
 }
