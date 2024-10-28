@@ -12,17 +12,17 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"
-	"github.com/stevegt/aidss/openai"
+	"github.com/stevegt/aidss/llm"
 )
 
-type MockOpenAIClient struct{}
+type MockLLMClient struct{}
 
-func (c *MockOpenAIClient) CreateChatCompletion(ctx context.Context, req openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error) {
+func (c *MockLLMClient) CreateChatCompletion(ctx context.Context, req llm.ChatCompletionRequest) (llm.ChatCompletionResponse, error) {
 	// Return a mock response
-	return openai.ChatCompletionResponse{
-		Choices: []openai.ChatCompletionChoice{
+	return llm.ChatCompletionResponse{
+		Choices: []llm.ChatCompletionChoice{
 			{
-				Message: openai.ChatCompletionMessage{
+				Message: llm.ChatCompletionMessage{
 					Content: "Mock response",
 				},
 			},
@@ -32,7 +32,7 @@ func (c *MockOpenAIClient) CreateChatCompletion(ctx context.Context, req openai.
 
 // Replace the client with a mock
 func init() {
-	client = &MockOpenAIClient{}
+	client = &MockLLMClient{}
 }
 
 func TestCreateNewDecisionNode(t *testing.T) {
@@ -146,11 +146,11 @@ func TestBuildContextMessages(t *testing.T) {
 	messages := buildContextMessages(subDir)
 
 	// Expected messages
-	expectedMessages := []openai.ChatCompletionMessage{
-		{Role: openai.ChatMessageRoleUser, Content: "Root message"},
-		{Role: openai.ChatMessageRoleAssistant, Content: "Root response"},
-		{Role: openai.ChatMessageRoleUser, Content: "Subdir message"},
-		{Role: openai.ChatMessageRoleAssistant, Content: "Subdir response"},
+	expectedMessages := []llm.ChatCompletionMessage{
+		{Role: llm.ChatMessageRoleUser, Content: "Root message"},
+		{Role: llm.ChatMessageRoleAssistant, Content: "Root response"},
+		{Role: llm.ChatMessageRoleUser, Content: "Subdir message"},
+		{Role: llm.ChatMessageRoleAssistant, Content: "Subdir response"},
 	}
 
 	if len(messages) != len(expectedMessages) {
@@ -193,8 +193,8 @@ func TestGetAttachmentsContent(t *testing.T) {
 
 func TestGetLLMResponse(t *testing.T) {
 	// Mock messages
-	messages := []openai.ChatCompletionMessage{
-		{Role: openai.ChatMessageRoleUser, Content: "Hello"},
+	messages := []llm.ChatCompletionMessage{
+		{Role: llm.ChatMessageRoleUser, Content: "Hello"},
 	}
 
 	// Call getLLMResponse
@@ -370,7 +370,7 @@ func TestAddWatcherRecursive(t *testing.T) {
 func TestGetSummary(t *testing.T) {
 	// Mock getLLMResponse
 	originalGetLLMResponse := getLLMResponse
-	getLLMResponse = func(messages []openai.ChatCompletionMessage) (string, error) {
+	getLLMResponse = func(messages []llm.ChatCompletionMessage) (string, error) {
 		return "Mock summary", nil
 	}
 	defer func() { getLLMResponse = originalGetLLMResponse }()

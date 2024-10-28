@@ -16,17 +16,17 @@ import (
 	"github.com/spf13/cobra"
 	"rsc.io/pdf"
 
-	openai "github.com/stevegt/aidss/llm"
+	"github.com/stevegt/aidss/llm"
 
 	. "github.com/stevegt/goadapt"
 )
 
 var (
 	watchPath string
-	client    openai.Client
-	// model = openai.GPT4o
-	model = openai.O1Mini
-	// model = openai.O1Preview
+	client    llm.Client
+	// model = llm.GPT4o
+	model = llm.O1Mini
+	// model = llm.O1Preview
 	maxTokens              = 128000
 	temperature float32    = 0.7 // Adjust as needed
 	mutex       sync.Mutex       // To handle concurrent access
@@ -46,9 +46,9 @@ func main() {
 	}
 
 	models := map[string]string{
-		"gpt-4o":     openai.GPT4o,
-		"o1-mini":    openai.O1Mini,
-		"o1-preview": openai.O1Preview,
+		"gpt-4o":     llm.GPT4o,
+		"o1-mini":    llm.O1Mini,
+		"o1-preview": llm.O1Preview,
 	}
 
 	// make sure usage include model names
@@ -72,10 +72,10 @@ func main() {
 // and responds to user messages and attachments.
 func startDaemon() {
 
-	// set up the OpenAI client
+	// set up the LLM client
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	Assert(apiKey != "", "OPENAI_API_KEY environment variable must be set")
-	client = openai.NewClient(apiKey)
+	client = llm.NewClient(apiKey)
 
 	// Start the file watcher
 	watcher, err := fsnotify.NewWatcher()
@@ -173,8 +173,8 @@ func handleUserMessage(path string) {
 	contextMessages := buildContextMessages(path)
 
 	// Append the new message
-	contextMessages = append(contextMessages, openai.ChatCompletionMessage{
-		Role:    openai.ChatMessageRoleUser,
+	contextMessages = append(contextMessages, llm.ChatCompletionMessage{
+		Role:    llm.ChatMessageRoleUser,
 		Content: string(message),
 	})
 
@@ -187,9 +187,9 @@ func handleUserMessage(path string) {
 
 	if attachmentsContent != "" {
 		// Add the attachments content to the system prompt
-		contextMessages = append([]openai.ChatCompletionMessage{
+		contextMessages = append([]llm.ChatCompletionMessage{
 			{
-				Role:    openai.ChatMessageRoleSystem,
+				Role:    llm.ChatMessageRoleSystem,
 				Content: "The following attachments are included:\n" + attachmentsContent,
 			},
 		}, contextMessages...)
@@ -212,8 +212,8 @@ func handleUserMessage(path string) {
 
 // buildContextMessages builds a list of chat messages from the root to the current directory
 // to provide context to the language model
-func buildContextMessages(path string) []openai.ChatCompletionMessage {
-	var messages []openai.ChatCompletionMessage
+func buildContextMessages(path string) []llm.ChatCompletionMessage {
+	var messages []llm.ChatCompletionMessage
 	var paths []string
 
 	// Collect paths from root to current directory
@@ -230,14 +230,14 @@ func buildContextMessages(path string) []openai.ChatCompletionMessage {
 	// Build messages from collected paths
 	for _, p := range paths {
 		if content, err := ioutil.ReadFile(filepath.Join(p, promptFn)); err == nil {
-			messages = append(messages, openai.ChatCompletionMessage{
-				Role:    openai.ChatMessageRoleUser,
+			messages = append(messages, llm.ChatCompletionMessage{
+				Role:    llm.ChatMessageRoleUser,
 				Content: string(content),
 			})
 		}
 		if content, err := ioutil.ReadFile(filepath.Join(p, responseFn)); err == nil {
-			messages = append(messages, openai.ChatCompletionMessage{
-				Role:    openai.ChatMessageRoleAssistant,
+			messages = append(messages, llm.ChatCompletionMessage{
+				Role:    llm.ChatMessageRoleAssistant,
 				Content: string(content),
 			})
 		}
@@ -268,10 +268,10 @@ func getAttachmentsContent(path string) (string, error) {
 	return contentBuilder.String(), nil
 }
 
-func getLLMResponse(messages []openai.ChatCompletionMessage) (string, error) {
+func getLLMResponse(messages []llm.ChatCompletionMessage) (string, error) {
 	ctx := context.Background()
 
-	req := openai.ChatCompletionRequest{
+	req := llm.ChatCompletionRequest{
 		Model:       model,
 		Messages:    messages,
 		MaxTokens:   maxTokens,
@@ -388,9 +388,9 @@ func summarizePath(path string) {
 
 func getSummary(text string) (string, error) {
 	summaryPrompt := fmt.Sprintf("Please provide a concise summary of the following conversation:\n\n%s", text)
-	messages := []openai.ChatCompletionMessage{
+	messages := []llm.ChatCompletionMessage{
 		{
-			Role:    openai.ChatMessageRoleUser,
+			Role:    llm.ChatMessageRoleUser,
 			Content: summaryPrompt,
 		},
 	}
