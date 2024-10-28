@@ -5,6 +5,7 @@ go 1.22.1
 replace github.com/sashabaranov/go-openai => github.com/stevegt/go-openai v0.0.0-20240913165527-e333fbe6374f
 
 require (
+	github.com/davecgh/go-spew v1.1.1
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/google/uuid v1.6.0
 	github.com/sashabaranov/go-openai v0.0.0-00010101000000-000000000000

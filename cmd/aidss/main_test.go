@@ -9,8 +9,11 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/fsnotify/fsnotify"
 	"github.com/stevegt/aidss/llm"
+
+	. "github.com/stevegt/goadapt"
 )
 
 func init() {
@@ -127,6 +130,7 @@ func TestBuildContextMessages(t *testing.T) {
 	}
 
 	if len(messages) != len(expectedMessages) {
+		spew.Dump(messages)
 		t.Fatalf("Expected %d messages, got %d", len(expectedMessages), len(messages))
 	}
 
@@ -338,12 +342,16 @@ func TestAddWatcherRecursive(t *testing.T) {
 	}
 
 	// Check if both directories are being watched
-	if _, ok := watcher.WatchList()[rootDir]; !ok {
-		t.Errorf("Expected rootDir to be in watch list")
-	}
-
-	if _, ok := watcher.WatchList()[subDir]; !ok {
-		t.Errorf("Expected subDir to be in watch list")
+	list := watcher.WatchList()
+	for _, want := range []string{rootDir, subDir} {
+		found := false
+		for _, got := range list {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		Tassert(t, found, "Expected %s to be in watch list", want)
 	}
 }
 

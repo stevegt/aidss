@@ -12,6 +12,13 @@ type Message struct {
 	Content string
 }
 
+// Define constants for message roles
+const (
+	ChatMessageRoleUser      = "user"
+	ChatMessageRoleAssistant = "assistant"
+	ChatMessageRoleSystem    = "system"
+)
+
 // Client is the interface that all LLM clients must implement.
 type Client interface {
 	GenerateResponse(ctx context.Context, messages []Message) (string, error)

@@ -4,44 +4,17 @@ import (
 	"context"
 	"errors"
 	"os"
+
+	openai "github.com/sashabaranov/go-openai"
 )
 
-// Define constants for models
-const (
-	GPT4o     = "gpt-4o"
-	O1Mini    = "o1-mini"
-	O1Preview = "o1-preview"
-)
-
-// ChatMessageRole defines roles for chat messages
-const (
-	ChatMessageRoleUser      = "user"
-	ChatMessageRoleAssistant = "assistant"
-	ChatMessageRoleSystem    = "system"
-)
-
-// ChatCompletionMessage struct represents a message in the chat
-type ChatCompletionMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+type OpenAI struct {
+	client *openai.Client
+	model  Model
 }
 
-// ChatCompletionRequest struct represents a request to the OpenAI chat completion API
-type ChatCompletionRequest struct {
-	Model       string                  `json:"model"`
-	Messages    []ChatCompletionMessage `json:"messages"`
-	MaxTokens   int                     `json:"max_tokens"`
-	Temperature float32                 `json:"temperature"`
-}
-
-// ChatCompletionResponse struct represents a response from the OpenAI chat completion API
-type ChatCompletionResponse struct {
-	Choices []ChatCompletionChoice `json:"choices"`
-}
-
-// ChatCompletionChoice struct represents a choice in the chat completion response
-type ChatCompletionChoice struct {
-	Message ChatCompletionMessage `json:"message"`
+type OpenAIProvider struct {
+	apiKey string
 }
 
 // Model struct represents a language model with its attributes
@@ -53,32 +26,21 @@ type Model struct {
 
 // Map of model names to Model structs
 var openAIModels = map[string]Model{
-	GPT4o: {
-		Name:        GPT4o,
+	openai.GPT4o: {
+		Name:        openai.GPT4o,
 		MaxTokens:   128000,
 		Temperature: 0.7,
 	},
-	O1Mini: {
-		Name:        O1Mini,
+	openai.O1Mini: {
+		Name:        openai.O1Mini,
 		MaxTokens:   128000,
 		Temperature: 0.7,
 	},
-	O1Preview: {
-		Name:        O1Preview,
+	openai.O1Preview: {
+		Name:        openai.O1Preview,
 		MaxTokens:   128000,
 		Temperature: 0.7,
 	},
-}
-
-// OpenAI implements Client interface
-type OpenAI struct {
-	apiKey string
-	model  Model
-}
-
-// OpenAIProvider implements Provider interface
-type OpenAIProvider struct {
-	apiKey string
 }
 
 // NewOpenAIProvider creates a new instance of OpenAIProvider
@@ -101,8 +63,11 @@ func (p *OpenAIProvider) NewClient(modelName string) (Client, error) {
 		return nil, errors.New("unsupported model: " + modelName)
 	}
 
+	// Create OpenAI client
+	client := openai.NewClient(p.apiKey)
+
 	return &OpenAI{
-		apiKey: p.apiKey,
+		client: client,
 		model:  model,
 	}, nil
 }
@@ -116,41 +81,27 @@ func (p *OpenAIProvider) Models() []string {
 	return models
 }
 
-// CreateChatCompletion sends a request to the OpenAI API and returns a completion response
-func (o *OpenAI) CreateChatCompletion(ctx context.Context, req ChatCompletionRequest) (ChatCompletionResponse, error) {
-	// Mocked response for demonstration purposes
-	if o.apiKey == "" {
-		return ChatCompletionResponse{}, errors.New("API key is not set")
-	}
-
-	response := ChatCompletionResponse{
-		Choices: []ChatCompletionChoice{
-			{Message: ChatCompletionMessage{Role: ChatMessageRoleAssistant, Content: "This is a placeholder response from OpenAI."}},
-		},
-	}
-
-	return response, nil
-}
-
 // GenerateResponse implements the Client interface
 func (o *OpenAI) GenerateResponse(ctx context.Context, messages []Message) (string, error) {
-	// Convert Messages to ChatCompletionMessages
-	var chatMessages []ChatCompletionMessage
+	// Convert Messages to openai.ChatCompletionMessage
+	var chatMessages []openai.ChatCompletionMessage
 	for _, msg := range messages {
-		chatMessages = append(chatMessages, ChatCompletionMessage{
+		chatMessages = append(chatMessages, openai.ChatCompletionMessage{
 			Role:    msg.Role,
 			Content: msg.Content,
 		})
 	}
 
-	req := ChatCompletionRequest{
+	// Build the request
+	req := openai.ChatCompletionRequest{
 		Model:       o.model.Name,
 		Messages:    chatMessages,
 		MaxTokens:   o.model.MaxTokens,
 		Temperature: o.model.Temperature,
 	}
 
-	resp, err := o.CreateChatCompletion(ctx, req)
+	// Call the OpenAI API
+	resp, err := o.client.CreateChatCompletion(ctx, req)
 	if err != nil {
 		return "", err
 	}

@@ -17,8 +17,7 @@ import (
 	"rsc.io/pdf"
 
 	"github.com/stevegt/aidss/llm"
-
-	. "github.com/stevegt/goadapt"
+	// . "github.com/stevegt/goadapt"
 )
 
 var (
@@ -215,7 +214,8 @@ func buildContextMessages(path string) []llm.Message {
 	for {
 		paths = append([]string{currentPath}, paths...)
 		parentPath := filepath.Dir(currentPath)
-		if parentPath == currentPath || parentPath == "." {
+		// stop at watchPath
+		if parentPath == currentPath || parentPath == watchPath {
 			break
 		}
 		currentPath = parentPath

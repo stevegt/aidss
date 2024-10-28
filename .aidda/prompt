@@ -15,8 +15,6 @@ Out:
 Sysmsg: You are an expert Go programmer. Please make the requested changes
  to the given code or documentation.
 
-The goal is to be able to easily call different models, including a mock model for testing.  
-- in openai.go, use the openai Go library instead of the mock and
-  placeholder code 
-- do not mock inside openai.go that's the job of mock.go
+Get rid of the watchPath, modelName, and client globals in main.go. Instead,
+set them in the main function.
 
