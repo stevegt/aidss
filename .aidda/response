@@ -19,14 +19,10 @@ import (
 	"rsc.io/pdf"
 
 	"github.com/stevegt/aidss/llm"
-
-	. "github.com/stevegt/goadapt"
+	// . "github.com/stevegt/goadapt"
 )
 
 var (
-	watchPath string
-	modelName string
-	client    llm.Client
 	mutex     sync.Mutex // To handle concurrent access
 
 	promptFn   = "prompt.txt"
@@ -45,7 +41,9 @@ func main() {
 		Use:   "decision_tool",
 		Short: "Decision Support Tool",
 		Run: func(cmd *cobra.Command, args []string) {
-			startDaemon()
+			watchPath, _ := cmd.Flags().GetString("path")
+			modelName, _ := cmd.Flags().GetString("model")
+			startDaemon(watchPath, modelName)
 		},
 	}
 
@@ -53,8 +51,8 @@ func main() {
 	modelUsage := fmt.Sprintf("Model to use (%s)", strings.Join(models, ", "))
 
 	// Define flags
-	rootCmd.Flags().StringVarP(&watchPath, "path", "p", ".", "Path to watch")
-	rootCmd.Flags().StringVarP(&modelName, "model", "m", models[0], modelUsage)
+	rootCmd.Flags().StringP("path", "p", ".", "Path to watch")
+	rootCmd.Flags().StringP("model", "m", models[0], modelUsage)
 
 	// Execute the root command
 	if err := rootCmd.Execute(); err != nil {
@@ -64,11 +62,11 @@ func main() {
 
 // startDaemon starts the decision tool daemon. The daemon watches the file system for changes
 // and responds to user messages and attachments.
-func startDaemon() {
+func startDaemon(watchPath string, modelName string) {
 	var err error
 
 	// Set up the LLM client based on the model name
-	client, err = llm.NewClient(modelName)
+	client, err := llm.NewClient(modelName)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -95,7 +93,7 @@ func startDaemon() {
 					// handle file write events
 					if filepath.Base(event.Name) == promptFn {
 						log.Println("Detected change in:", event.Name)
-						handleUserMessage(filepath.Dir(event.Name))
+						handleUserMessage(filepath.Dir(event.Name), client, watchPath)
 					}
 					if filepath.Ext(event.Name) == ".pdf" {
 						log.Println("Detected PDF attachment:", event.Name)
@@ -154,7 +152,7 @@ func addWatcherRecursive(watcher *fsnotify.Watcher, path string) error {
 }
 
 // handleUserMessage handles a user message by generating a response from the language model
-func handleUserMessage(path string) {
+func handleUserMessage(path string, client llm.Client, watchPath string) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
@@ -166,7 +164,7 @@ func handleUserMessage(path string) {
 	}
 
 	// Build context messages
-	contextMessages := buildContextMessages(path)
+	contextMessages := buildContextMessages(path, watchPath)
 
 	// Append the new message
 	contextMessages = append(contextMessages, llm.Message{
@@ -191,7 +189,7 @@ func handleUserMessage(path string) {
 		}, contextMessages...)
 	}
 
-	response, err := getLLMResponse(contextMessages)
+	response, err := getLLMResponse(contextMessages, client)
 	if err != nil {
 		log.Println("Error getting LLM response:", err)
 		return
@@ -208,7 +206,7 @@ func handleUserMessage(path string) {
 
 // buildContextMessages builds a list of chat messages from the root to the current directory
 // to provide context to the language model
-func buildContextMessages(path string) []llm.Message {
+func buildContextMessages(path string, watchPath string) []llm.Message {
 	var messages []llm.Message
 	var paths []string
 
@@ -217,7 +215,8 @@ func buildContextMessages(path string) []llm.Message {
 	for {
 		paths = append([]string{currentPath}, paths...)
 		parentPath := filepath.Dir(currentPath)
-		if parentPath == currentPath || parentPath == "." {
+		// stop at watchPath
+		if parentPath == currentPath || parentPath == watchPath {
 			break
 		}
 		currentPath = parentPath
@@ -264,7 +263,7 @@ func getAttachmentsContent(path string) (string, error) {
 	return contentBuilder.String(), nil
 }
 
-func getLLMResponse(messages []llm.Message) (string, error) {
+func getLLMResponse(messages []llm.Message, client llm.Client) (string, error) {
 	ctx := context.Background()
 	response, err := client.GenerateResponse(ctx, messages)
 	if err != nil {
@@ -347,18 +346,18 @@ func generateUUID() string {
 	return id.String()
 }
 
-func summarizePath(path string) {
+func summarizePath(path string, client llm.Client, watchPath string) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	messages := buildContextMessages(path)
+	messages := buildContextMessages(path, watchPath)
 	var textBuilder strings.Builder
 	for _, msg := range messages {
 		textBuilder.WriteString(msg.Role + ": " + msg.Content + "\n")
 	}
 	text := textBuilder.String()
 
-	summary, err := getSummary(text)
+	summary, err := getSummary(text, client)
 	if err != nil {
 		log.Println("Error summarizing path:", err)
 		return
@@ -373,7 +372,7 @@ func summarizePath(path string) {
 	}
 }
 
-func getSummary(text string) (string, error) {
+func getSummary(text string, client llm.Client) (string, error) {
 	summaryPrompt := fmt.Sprintf("Please provide a concise summary of the following conversation:\n\n%s", text)
 	messages := []llm.Message{
 		{
@@ -381,7 +380,7 @@ func getSummary(text string) (string, error) {
 			Content: summaryPrompt,
 		},
 	}
-	return getLLMResponse(messages)
+	return getLLMResponse(messages, client)
 }
 
 func updateMetrics(path string, metrics map[string]interface{}) {
@@ -414,8 +413,11 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/fsnotify/fsnotify"
 	"github.com/stevegt/aidss/llm"
+
+	. "github.com/stevegt/goadapt"
 )
 
 func init() {
@@ -463,7 +465,7 @@ func TestHandleUserMessage(t *testing.T) {
 
 	// Create the mock client
 	var errClient error
-	client, errClient = llm.NewClient("mock-model")
+	client, errClient := llm.NewClient("mock-model")
 	if errClient != nil {
 		t.Fatalf("Error creating mock client: %v", errClient)
 	}
@@ -472,7 +474,7 @@ func TestHandleUserMessage(t *testing.T) {
 	mutex = sync.Mutex{}
 
 	// Call handleUserMessage
-	handleUserMessage(tempDir)
+	handleUserMessage(tempDir, client, tempDir)
 
 	// Check response.txt
 	responsePath := filepath.Join(tempDir, "response.txt")
@@ -521,7 +523,7 @@ func TestBuildContextMessages(t *testing.T) {
 	}
 
 	// Call buildContextMessages
-	messages := buildContextMessages(subDir)
+	messages := buildContextMessages(subDir, rootDir)
 
 	// Expected messages
 	expectedMessages := []llm.Message{
@@ -532,6 +534,7 @@ func TestBuildContextMessages(t *testing.T) {
 	}
 
 	if len(messages) != len(expectedMessages) {
+		spew.Dump(messages)
 		t.Fatalf("Expected %d messages, got %d", len(expectedMessages), len(messages))
 	}
 
@@ -572,7 +575,7 @@ func TestGetAttachmentsContent(t *testing.T) {
 func TestGetLLMResponse(t *testing.T) {
 	// Create the mock client
 	var errClient error
-	client, errClient = llm.NewClient("mock-model")
+	client, errClient := llm.NewClient("mock-model")
 	if errClient != nil {
 		t.Fatalf("Error creating mock client: %v", errClient)
 	}
@@ -583,7 +586,7 @@ func TestGetLLMResponse(t *testing.T) {
 	}
 
 	// Call getLLMResponse
-	response, err := getLLMResponse(messages)
+	response, err := getLLMResponse(messages, client)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -657,13 +660,13 @@ func TestSummarizePath(t *testing.T) {
 
 	// Create the mock client
 	var errClient error
-	client, errClient = llm.NewClient("mock-model")
+	client, errClient := llm.NewClient("mock-model")
 	if errClient != nil {
 		t.Fatalf("Error creating mock client: %v", errClient)
 	}
 
 	// Call summarizePath
-	summarizePath(tempDir)
+	summarizePath(tempDir, client, tempDir)
 
 	// Check if summary.txt is created
 	summaryPath := filepath.Join(tempDir, "summary.txt")
@@ -743,26 +746,30 @@ func TestAddWatcherRecursive(t *testing.T) {
 	}
 
 	// Check if both directories are being watched
-	if _, ok := watcher.WatchList()[rootDir]; !ok {
-		t.Errorf("Expected rootDir to be in watch list")
-	}
-
-	if _, ok := watcher.WatchList()[subDir]; !ok {
-		t.Errorf("Expected subDir to be in watch list")
+	list := watcher.WatchList()
+	for _, want := range []string{rootDir, subDir} {
+		found := false
+		for _, got := range list {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		Tassert(t, found, "Expected %s to be in watch list", want)
 	}
 }
 
 func TestGetSummary(t *testing.T) {
 	// Create the mock client
 	var errClient error
-	client, errClient = llm.NewClient("mock-model")
+	client, errClient := llm.NewClient("mock-model")
 	if errClient != nil {
 		t.Fatalf("Error creating mock client: %v", errClient)
 	}
 
 	// Call getSummary
 	text := "Conversation text"
-	summary, err := getSummary(text)
+	summary, err := getSummary(text, client)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -776,8 +783,15 @@ func TestErrorHandlingInHandleUserMessage(t *testing.T) {
 	// Use a non-existent directory
 	nonExistentPath := "non_existent_dir"
 
+	// Create the mock client
+	var errClient error
+	client, errClient := llm.NewClient("mock-model")
+	if errClient != nil {
+		t.Fatalf("Error creating mock client: %v", errClient)
+	}
+
 	// Call handleUserMessage
-	handleUserMessage(nonExistentPath)
+	handleUserMessage(nonExistentPath, client, nonExistentPath)
 
 	// Expect no panic and error to be logged
 }
@@ -850,14 +864,19 @@ type Model struct {
 
 // Map of model names to Model structs
 var openAIModels = map[string]Model{
-	"gpt-3.5-turbo": {
-		Name:        "gpt-3.5-turbo",
-		MaxTokens:   4096,
+	openai.GPT4o: {
+		Name:        openai.GPT4o,
+		MaxTokens:   128000,
 		Temperature: 0.7,
 	},
-	"gpt-4": {
-		Name:        "gpt-4",
-		MaxTokens:   8192,
+	openai.O1Mini: {
+		Name:        openai.O1Mini,
+		MaxTokens:   128000,
+		Temperature: 0.7,
+	},
+	openai.O1Preview: {
+		Name:        openai.O1Preview,
+		MaxTokens:   128000,
 		Temperature: 0.7,
 	},
 }

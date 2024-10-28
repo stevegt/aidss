@@ -15,6 +15,6 @@ Out:
 Sysmsg: You are an expert Go programmer. Please make the requested changes
  to the given code or documentation.
 
-Get rid of the watchPath, modelName, and client globals in main.go. Instead,
-set them in the main function.
+Instead of marking attached files as "Attachment:", delimit them with
+unique XML tags.
 

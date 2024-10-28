@@ -61,7 +61,7 @@ func TestHandleUserMessage(t *testing.T) {
 
 	// Create the mock client
 	var errClient error
-	client, errClient = llm.NewClient("mock-model")
+	client, errClient := llm.NewClient("mock-model")
 	if errClient != nil {
 		t.Fatalf("Error creating mock client: %v", errClient)
 	}
@@ -70,7 +70,7 @@ func TestHandleUserMessage(t *testing.T) {
 	mutex = sync.Mutex{}
 
 	// Call handleUserMessage
-	handleUserMessage(tempDir)
+	handleUserMessage(tempDir, client, tempDir)
 
 	// Check response.txt
 	responsePath := filepath.Join(tempDir, "response.txt")
@@ -119,7 +119,7 @@ func TestBuildContextMessages(t *testing.T) {
 	}
 
 	// Call buildContextMessages
-	messages := buildContextMessages(subDir)
+	messages := buildContextMessages(subDir, rootDir)
 
 	// Expected messages
 	expectedMessages := []llm.Message{
@@ -171,7 +171,7 @@ func TestGetAttachmentsContent(t *testing.T) {
 func TestGetLLMResponse(t *testing.T) {
 	// Create the mock client
 	var errClient error
-	client, errClient = llm.NewClient("mock-model")
+	client, errClient := llm.NewClient("mock-model")
 	if errClient != nil {
 		t.Fatalf("Error creating mock client: %v", errClient)
 	}
@@ -182,7 +182,7 @@ func TestGetLLMResponse(t *testing.T) {
 	}
 
 	// Call getLLMResponse
-	response, err := getLLMResponse(messages)
+	response, err := getLLMResponse(messages, client)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -256,13 +256,13 @@ func TestSummarizePath(t *testing.T) {
 
 	// Create the mock client
 	var errClient error
-	client, errClient = llm.NewClient("mock-model")
+	client, errClient := llm.NewClient("mock-model")
 	if errClient != nil {
 		t.Fatalf("Error creating mock client: %v", errClient)
 	}
 
 	// Call summarizePath
-	summarizePath(tempDir)
+	summarizePath(tempDir, client, tempDir)
 
 	// Check if summary.txt is created
 	summaryPath := filepath.Join(tempDir, "summary.txt")
@@ -358,14 +358,14 @@ func TestAddWatcherRecursive(t *testing.T) {
 func TestGetSummary(t *testing.T) {
 	// Create the mock client
 	var errClient error
-	client, errClient = llm.NewClient("mock-model")
+	client, errClient := llm.NewClient("mock-model")
 	if errClient != nil {
 		t.Fatalf("Error creating mock client: %v", errClient)
 	}
 
 	// Call getSummary
 	text := "Conversation text"
-	summary, err := getSummary(text)
+	summary, err := getSummary(text, client)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -379,8 +379,15 @@ func TestErrorHandlingInHandleUserMessage(t *testing.T) {
 	// Use a non-existent directory
 	nonExistentPath := "non_existent_dir"
 
+	// Create the mock client
+	var errClient error
+	client, errClient := llm.NewClient("mock-model")
+	if errClient != nil {
+		t.Fatalf("Error creating mock client: %v", errClient)
+	}
+
 	// Call handleUserMessage
-	handleUserMessage(nonExistentPath)
+	handleUserMessage(nonExistentPath, client, nonExistentPath)
 
 	// Expect no panic and error to be logged
 }

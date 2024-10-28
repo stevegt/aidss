@@ -17,14 +17,11 @@ import (
 	"rsc.io/pdf"
 
 	"github.com/stevegt/aidss/llm"
-	// . "github.com/stevegt/goadapt"
+	. "github.com/stevegt/goadapt"
 )
 
 var (
-	watchPath string
-	modelName string
-	client    llm.Client
-	mutex     sync.Mutex // To handle concurrent access
+	mutex sync.Mutex // To handle concurrent access
 
 	promptFn   = "prompt.txt"
 	responseFn = "response.txt"
@@ -42,7 +39,11 @@ func main() {
 		Use:   "decision_tool",
 		Short: "Decision Support Tool",
 		Run: func(cmd *cobra.Command, args []string) {
-			startDaemon()
+			watchPath, err := cmd.Flags().GetString("path")
+			Ck(err)
+			modelName, err := cmd.Flags().GetString("model")
+			Ck(err)
+			startDaemon(watchPath, modelName)
 		},
 	}
 
@@ -50,8 +51,8 @@ func main() {
 	modelUsage := fmt.Sprintf("Model to use (%s)", strings.Join(models, ", "))
 
 	// Define flags
-	rootCmd.Flags().StringVarP(&watchPath, "path", "p", ".", "Path to watch")
-	rootCmd.Flags().StringVarP(&modelName, "model", "m", models[0], modelUsage)
+	rootCmd.Flags().StringP("path", "p", ".", "Path to watch")
+	rootCmd.Flags().StringP("model", "m", models[0], modelUsage)
 
 	// Execute the root command
 	if err := rootCmd.Execute(); err != nil {
@@ -61,11 +62,11 @@ func main() {
 
 // startDaemon starts the decision tool daemon. The daemon watches the file system for changes
 // and responds to user messages and attachments.
-func startDaemon() {
+func startDaemon(watchPath string, modelName string) {
 	var err error
 
 	// Set up the LLM client based on the model name
-	client, err = llm.NewClient(modelName)
+	client, err := llm.NewClient(modelName)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -92,7 +93,7 @@ func startDaemon() {
 					// handle file write events
 					if filepath.Base(event.Name) == promptFn {
 						log.Println("Detected change in:", event.Name)
-						handleUserMessage(filepath.Dir(event.Name))
+						handleUserMessage(filepath.Dir(event.Name), client, watchPath)
 					}
 					if filepath.Ext(event.Name) == ".pdf" {
 						log.Println("Detected PDF attachment:", event.Name)
@@ -151,7 +152,7 @@ func addWatcherRecursive(watcher *fsnotify.Watcher, path string) error {
 }
 
 // handleUserMessage handles a user message by generating a response from the language model
-func handleUserMessage(path string) {
+func handleUserMessage(path string, client llm.Client, watchPath string) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
@@ -163,7 +164,7 @@ func handleUserMessage(path string) {
 	}
 
 	// Build context messages
-	contextMessages := buildContextMessages(path)
+	contextMessages := buildContextMessages(path, watchPath)
 
 	// Append the new message
 	contextMessages = append(contextMessages, llm.Message{
@@ -188,7 +189,7 @@ func handleUserMessage(path string) {
 		}, contextMessages...)
 	}
 
-	response, err := getLLMResponse(contextMessages)
+	response, err := getLLMResponse(contextMessages, client)
 	if err != nil {
 		log.Println("Error getting LLM response:", err)
 		return
@@ -205,7 +206,7 @@ func handleUserMessage(path string) {
 
 // buildContextMessages builds a list of chat messages from the root to the current directory
 // to provide context to the language model
-func buildContextMessages(path string) []llm.Message {
+func buildContextMessages(path string, watchPath string) []llm.Message {
 	var messages []llm.Message
 	var paths []string
 
@@ -213,9 +214,13 @@ func buildContextMessages(path string) []llm.Message {
 	currentPath := path
 	for {
 		paths = append([]string{currentPath}, paths...)
+		if currentPath == watchPath {
+			// stop at the watch path
+			break
+		}
 		parentPath := filepath.Dir(currentPath)
-		// stop at watchPath
-		if parentPath == currentPath || parentPath == watchPath {
+		if parentPath == currentPath {
+			// stop at the filesystem root
 			break
 		}
 		currentPath = parentPath
@@ -262,7 +267,7 @@ func getAttachmentsContent(path string) (string, error) {
 	return contentBuilder.String(), nil
 }
 
-func getLLMResponse(messages []llm.Message) (string, error) {
+func getLLMResponse(messages []llm.Message, client llm.Client) (string, error) {
 	ctx := context.Background()
 	response, err := client.GenerateResponse(ctx, messages)
 	if err != nil {
@@ -345,18 +350,18 @@ func generateUUID() string {
 	return id.String()
 }
 
-func summarizePath(path string) {
+func summarizePath(path string, client llm.Client, watchPath string) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	messages := buildContextMessages(path)
+	messages := buildContextMessages(path, watchPath)
 	var textBuilder strings.Builder
 	for _, msg := range messages {
 		textBuilder.WriteString(msg.Role + ": " + msg.Content + "\n")
 	}
 	text := textBuilder.String()
 
-	summary, err := getSummary(text)
+	summary, err := getSummary(text, client)
 	if err != nil {
 		log.Println("Error summarizing path:", err)
 		return
@@ -371,7 +376,7 @@ func summarizePath(path string) {
 	}
 }
 
-func getSummary(text string) (string, error) {
+func getSummary(text string, client llm.Client) (string, error) {
 	summaryPrompt := fmt.Sprintf("Please provide a concise summary of the following conversation:\n\n%s", text)
 	messages := []llm.Message{
 		{
@@ -379,7 +384,7 @@ func getSummary(text string) (string, error) {
 			Content: summaryPrompt,
 		},
 	}
-	return getLLMResponse(messages)
+	return getLLMResponse(messages, client)
 }
 
 func updateMetrics(path string, metrics map[string]interface{}) {
