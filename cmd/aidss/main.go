@@ -13,9 +13,10 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"
-	openai "github.com/sashabaranov/go-openai"
 	"github.com/spf13/cobra"
 	"rsc.io/pdf"
+
+	"github.com/stevegt/aidss/openai"
 
 	. "github.com/stevegt/goadapt"
 )
@@ -78,7 +79,7 @@ func startDaemon() {
 	// set up the OpenAI client
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	Assert(apiKey != "", "OPENAI_API_KEY environment variable must be set")
-	client = openai.NewClient(apiKey)
+	client = openai.NewOpenAIClient(apiKey)
 
 	// Start the file watcher
 	watcher, err := fsnotify.NewWatcher()

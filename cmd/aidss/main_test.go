@@ -12,7 +12,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"
-	openai "github.com/sashabaranov/go-openai"
+	"github.com/stevegt/aidss/openai"
 )
 
 type MockOpenAIClient struct{}
