@@ -4,6 +4,7 @@ In:
  cmd/aidss/main.go
  cmd/aidss/main_test.go
  llm/openai.go
+ llm/mock.go
  llm/llm.go
 Out: 
  cmd/aidss/main.go
@@ -15,11 +16,13 @@ Sysmsg: You are an expert Go programmer. Please make the requested changes
  to the given code or documentation.
 
 The goal is to be able to easily call different models, including a mock model for testing.  
-1. Ensure all API calls are in the llm package.  All of the OpenAI
-calls should be in an OpenAI struct in openai.go.  
-2. Ensure there is a mock model in mock.go for testing.  All of the
-mock calls should be in a Mock struct in mock.go.
-3. In mock.go:Mock and openai.go:OpenAI, add a Models() method that can be called to
-return the models that are available.
-4. Move the Client interface to llm/llm.go.  
-
+- do we really need a Models() method in Client interface?
+- move init() content to main()
+- maxTokens should be an attribute of a Model struct
+- possible that calls should be made to Model methods instead of Client methods
+- do not mock inside the OpenAI struct's methods -- that's the job of
+  the Mock struct methods
+- have each provider read API key from environment variable (don't do
+  it in main())
+- set up client based on the model name
+- remove MockLLMClient from main_test.go; use the mock model instead

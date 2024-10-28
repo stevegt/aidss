@@ -15,12 +15,13 @@ type Message struct {
 // Client is the interface that all LLM clients must implement.
 type Client interface {
 	GenerateResponse(ctx context.Context, messages []Message) (string, error)
+	// Models() []string // Added Models method
 }
 
 // Provider represents an LLM provider.
 type Provider interface {
-	// NewClient returns a new Client instance for the given model name.
-	NewClient(modelName string) (Client, error)
+	// NewClient returns a new Client instance for the given model name and apiKey.
+	NewClient(modelName string, apiKey string) (Client, error)
 	// Models returns a list of model names supported by this provider.
 	Models() []string
 }
@@ -58,7 +59,7 @@ func Models() []string {
 }
 
 // NewClient returns a Client for the given model name.
-func NewClient(modelName string) (Client, error) {
+func NewClient(modelName string, apiKey string) (Client, error) {
 	registryMutex.Lock()
 	defer registryMutex.Unlock()
 
@@ -70,5 +71,13 @@ func NewClient(modelName string) (Client, error) {
 	if !ok {
 		return nil, fmt.Errorf("provider %s not found for model %s", providerName, modelName)
 	}
-	return provider.NewClient(modelName)
+	return provider.NewClient(modelName, apiKey)
+}
+
+func init() {
+	// Initialize and register providers
+	openAIProvider := NewOpenAIProvider()
+	RegisterProvider("openai", openAIProvider)
+	mockProvider := NewMockProvider()
+	RegisterProvider("mock", mockProvider)
 }

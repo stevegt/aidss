@@ -1,4 +1,3 @@
-
 File: /home/stevegt/lab/aidss/cmd/aidss/main.go
 ```go
 package main
@@ -25,12 +24,10 @@ import (
 )
 
 var (
-	watchPath string
-	client    llm.Client
-	// model = llm.GPT4o
-	model = llm.O1Mini
-	// model = llm.O1Preview
-	maxTokens              = 128000
+	watchPath   string
+	client      llm.Client
+	model       string
+	maxTokens   = 128000
 	temperature float32    = 0.7 // Adjust as needed
 	mutex       sync.Mutex       // To handle concurrent access
 
@@ -48,22 +45,15 @@ func main() {
 		},
 	}
 
-	models := map[string]string{
-		"gpt-4o":     llm.GPT4o,
-		"o1-mini":    llm.O1Mini,
-		"o1-preview": llm.O1Preview,
-	}
+	// Get available models from llm package
+	models := llm.Models()
 
-	// make sure usage include model names
-	var modelNames []string
-	for name := range models {
-		modelNames = append(modelNames, name)
-	}
-	modelUsage := fmt.Sprintf("Model to use (%s)", strings.Join(modelNames, ", "))
+	// Make sure usage includes model names
+	modelUsage := fmt.Sprintf("Model to use (%s)", strings.Join(models, ", "))
 
 	// Define flags
 	rootCmd.Flags().StringVarP(&watchPath, "path", "p", ".", "Path to watch")
-	rootCmd.Flags().StringVarP(&model, "model", "m", "gpt-4o", modelUsage)
+	rootCmd.Flags().StringVarP(&model, "model", "m", models[0], modelUsage)
 
 	// Execute the root command
 	if err := rootCmd.Execute(); err != nil {
@@ -71,14 +61,17 @@ func main() {
 	}
 }
 
-// startDaemon starts the decision tool daemon.  The daemon watches the file system for changes
+// startDaemon starts the decision tool daemon. The daemon watches the file system for changes
 // and responds to user messages and attachments.
 func startDaemon() {
-
-	// set up the LLM client
+	// Set up the LLM client
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	Assert(apiKey != "", "OPENAI_API_KEY environment variable must be set")
-	client = llm.NewClient(apiKey)
+	var err error
+	client, err = llm.NewClient(model, apiKey)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Start the file watcher
 	watcher, err := fsnotify.NewWatcher()
@@ -176,7 +169,7 @@ func handleUserMessage(path string) {
 	contextMessages := buildContextMessages(path)
 
 	// Append the new message
-	contextMessages = append(contextMessages, llm.ChatCompletionMessage{
+	contextMessages = append(contextMessages, llm.Message{
 		Role:    llm.ChatMessageRoleUser,
 		Content: string(message),
 	})
@@ -190,7 +183,7 @@ func handleUserMessage(path string) {
 
 	if attachmentsContent != "" {
 		// Add the attachments content to the system prompt
-		contextMessages = append([]llm.ChatCompletionMessage{
+		contextMessages = append([]llm.Message{
 			{
 				Role:    llm.ChatMessageRoleSystem,
 				Content: "The following attachments are included:\n" + attachmentsContent,
@@ -215,8 +208,8 @@ func handleUserMessage(path string) {
 
 // buildContextMessages builds a list of chat messages from the root to the current directory
 // to provide context to the language model
-func buildContextMessages(path string) []llm.ChatCompletionMessage {
-	var messages []llm.ChatCompletionMessage
+func buildContextMessages(path string) []llm.Message {
+	var messages []llm.Message
 	var paths []string
 
 	// Collect paths from root to current directory
@@ -233,13 +226,13 @@ func buildContextMessages(path string) []llm.ChatCompletionMessage {
 	// Build messages from collected paths
 	for _, p := range paths {
 		if content, err := ioutil.ReadFile(filepath.Join(p, promptFn)); err == nil {
-			messages = append(messages, llm.ChatCompletionMessage{
+			messages = append(messages, llm.Message{
 				Role:    llm.ChatMessageRoleUser,
 				Content: string(content),
 			})
 		}
 		if content, err := ioutil.ReadFile(filepath.Join(p, responseFn)); err == nil {
-			messages = append(messages, llm.ChatCompletionMessage{
+			messages = append(messages, llm.Message{
 				Role:    llm.ChatMessageRoleAssistant,
 				Content: string(content),
 			})
@@ -271,22 +264,13 @@ func getAttachmentsContent(path string) (string, error) {
 	return contentBuilder.String(), nil
 }
 
-func getLLMResponse(messages []llm.ChatCompletionMessage) (string, error) {
+func getLLMResponse(messages []llm.Message) (string, error) {
 	ctx := context.Background()
-
-	req := llm.ChatCompletionRequest{
-		Model:       model,
-		Messages:    messages,
-		MaxTokens:   maxTokens,
-		Temperature: temperature,
-	}
-
-	resp, err := client.CreateChatCompletion(ctx, req)
+	response, err := client.GenerateResponse(ctx, messages)
 	if err != nil {
 		return "", err
 	}
-
-	return resp.Choices[0].Message.Content, nil
+	return response, nil
 }
 
 func handlePDFAttachment(pdfPath string, extractTextFunc func(string) (string, error)) {
@@ -391,7 +375,7 @@ func summarizePath(path string) {
 
 func getSummary(text string) (string, error) {
 	summaryPrompt := fmt.Sprintf("Please provide a concise summary of the following conversation:\n\n%s", text)
-	messages := []llm.ChatCompletionMessage{
+	messages := []llm.Message{
 		{
 			Role:    llm.ChatMessageRoleUser,
 			Content: summaryPrompt,
@@ -438,20 +422,16 @@ import (
 
 type MockLLMClient struct{}
 
-func (c *MockLLMClient) CreateChatCompletion(ctx context.Context, req llm.ChatCompletionRequest) (llm.ChatCompletionResponse, error) {
+func (c *MockLLMClient) GenerateResponse(ctx context.Context, messages []llm.Message) (string, error) {
 	// Return a mock response
-	return llm.ChatCompletionResponse{
-		Choices: []llm.ChatCompletionChoice{
-			{
-				Message: llm.ChatCompletionMessage{
-					Content: "Mock response",
-				},
-			},
-		},
-	}, nil
+	return "Mock response", nil
 }
 
-// Replace the client with a mock
+func (c *MockLLMClient) Models() []string {
+	return []string{"mock-model"}
+}
+
+// Replace the client with a mock in the tests
 func init() {
 	client = &MockLLMClient{}
 }
@@ -489,6 +469,7 @@ func TestSanitizeDescriptor(t *testing.T) {
 }
 
 func TestGenerateUUID(t *testing.T) {
+	// Generate a UUID and ensure it's valid
 	id := generateUUID()
 	_, err := uuid.Parse(id)
 	if err != nil {
@@ -567,7 +548,7 @@ func TestBuildContextMessages(t *testing.T) {
 	messages := buildContextMessages(subDir)
 
 	// Expected messages
-	expectedMessages := []llm.ChatCompletionMessage{
+	expectedMessages := []llm.Message{
 		{Role: llm.ChatMessageRoleUser, Content: "Root message"},
 		{Role: llm.ChatMessageRoleAssistant, Content: "Root response"},
 		{Role: llm.ChatMessageRoleUser, Content: "Subdir message"},
@@ -614,7 +595,7 @@ func TestGetAttachmentsContent(t *testing.T) {
 
 func TestGetLLMResponse(t *testing.T) {
 	// Mock messages
-	messages := []llm.ChatCompletionMessage{
+	messages := []llm.Message{
 		{Role: llm.ChatMessageRoleUser, Content: "Hello"},
 	}
 
@@ -791,7 +772,7 @@ func TestAddWatcherRecursive(t *testing.T) {
 func TestGetSummary(t *testing.T) {
 	// Mock getLLMResponse
 	originalGetLLMResponse := getLLMResponse
-	getLLMResponse = func(messages []llm.ChatCompletionMessage) (string, error) {
+	getLLMResponse = func(messages []llm.Message) (string, error) {
 		return "Mock summary", nil
 	}
 	defer func() { getLLMResponse = originalGetLLMResponse }()
@@ -887,10 +868,10 @@ type ChatCompletionMessage struct {
 
 // ChatCompletionRequest struct represents a request to the OpenAI chat completion API
 type ChatCompletionRequest struct {
-	Model       string                   `json:"model"`
-	Messages    []ChatCompletionMessage  `json:"messages"`
-	MaxTokens   int                      `json:"max_tokens"`
-	Temperature float32                  `json:"temperature"`
+	Model       string                  `json:"model"`
+	Messages    []ChatCompletionMessage `json:"messages"`
+	MaxTokens   int                     `json:"max_tokens"`
+	Temperature float32                 `json:"temperature"`
 }
 
 // ChatCompletionResponse struct represents a response from the OpenAI chat completion API
@@ -903,35 +884,211 @@ type ChatCompletionChoice struct {
 	Message ChatCompletionMessage `json:"message"`
 }
 
-// Client is the interface that wraps the CreateChatCompletion method
-type Client interface {
-	CreateChatCompletion(ctx context.Context, req ChatCompletionRequest) (ChatCompletionResponse, error)
+// OpenAI implements Client interface
+type OpenAI struct {
+	apiKey      string
+	model       string
+	maxTokens   int
+	temperature float32
 }
 
-// openAIClient implements Client interface
-type openAIClient struct {
-	apiKey string
+// OpenAIProvider implements Provider interface
+type OpenAIProvider struct{}
+
+// NewOpenAIProvider creates a new instance of OpenAIProvider
+func NewOpenAIProvider() *OpenAIProvider {
+	return &OpenAIProvider{}
 }
 
-// NewClient creates a new instance of OpenAI client
-func NewClient(apiKey string) Client {
-	return &openAIClient{apiKey: apiKey}
+// NewClient returns a new OpenAI client for the given model
+func (p *OpenAIProvider) NewClient(modelName string, apiKey string) (Client, error) {
+	return &OpenAI{
+		apiKey:      apiKey,
+		model:       modelName,
+		maxTokens:   128000,
+		temperature: 0.7,
+	}, nil
+}
+
+// Models returns the models available in OpenAI
+func (p *OpenAIProvider) Models() []string {
+	return []string{GPT4o, O1Mini, O1Preview}
 }
 
 // CreateChatCompletion sends a request to the OpenAI API and returns a completion response
-func (c *openAIClient) CreateChatCompletion(ctx context.Context, req ChatCompletionRequest) (ChatCompletionResponse, error) {
+func (o *OpenAI) CreateChatCompletion(ctx context.Context, req ChatCompletionRequest) (ChatCompletionResponse, error) {
 	// Mocked response for demonstration purposes
-	if c.apiKey == "" {
+	if o.apiKey == "" {
 		return ChatCompletionResponse{}, errors.New("API key is not set")
 	}
 
 	response := ChatCompletionResponse{
 		Choices: []ChatCompletionChoice{
-			{Message: ChatCompletionMessage{Role: ChatMessageRoleAssistant, Content: "This is a placeholder response."}},
+			{Message: ChatCompletionMessage{Role: ChatMessageRoleAssistant, Content: "This is a placeholder response from OpenAI."}},
 		},
 	}
 
 	return response, nil
 }
+
+// GenerateResponse implements the Client interface
+func (o *OpenAI) GenerateResponse(ctx context.Context, messages []Message) (string, error) {
+	// Convert Messages to ChatCompletionMessages
+	var chatMessages []ChatCompletionMessage
+	for _, msg := range messages {
+		chatMessages = append(chatMessages, ChatCompletionMessage{
+			Role:    msg.Role,
+			Content: msg.Content,
+		})
+	}
+
+	req := ChatCompletionRequest{
+		Model:       o.model,
+		Messages:    chatMessages,
+		MaxTokens:   o.maxTokens,
+		Temperature: o.temperature,
+	}
+
+	resp, err := o.CreateChatCompletion(ctx, req)
+	if err != nil {
+		return "", err
+	}
+
+	return resp.Choices[0].Message.Content, nil
+}
+
+// Models returns the models available in OpenAI (for completeness)
+func (o *OpenAI) Models() []string {
+	return []string{GPT4o, O1Mini, O1Preview}
+}
 ```
 EOF_/home/stevegt/lab/aidss/llm/openai.go
+
+File: /home/stevegt/lab/aidss/llm/mock.go
+```go
+package llm
+
+import (
+	"context"
+)
+
+// Mock implements Client interface
+type Mock struct{}
+
+// MockProvider implements Provider interface
+type MockProvider struct{}
+
+// NewMockProvider creates a new instance of MockProvider
+func NewMockProvider() *MockProvider {
+	return &MockProvider{}
+}
+
+// NewClient returns a new Mock client
+func (p *MockProvider) NewClient(modelName string, apiKey string) (Client, error) {
+	return &Mock{}, nil
+}
+
+// Models returns the models available in Mock
+func (p *MockProvider) Models() []string {
+	return []string{"mock-model"}
+}
+
+// GenerateResponse returns a mock response
+func (m *Mock) GenerateResponse(ctx context.Context, messages []Message) (string, error) {
+	return "This is a mock response.", nil
+}
+
+// Models returns the models available in Mock (for completeness)
+func (m *Mock) Models() []string {
+	return []string{"mock-model"}
+}
+```
+EOF_/home/stevegt/lab/aidss/llm/mock.go
+
+File: /home/stevegt/lab/aidss/llm/llm.go
+```go
+package llm
+
+import (
+	"context"
+	"fmt"
+	"sync"
+)
+
+// Message represents a chat message.
+type Message struct {
+	Role    string // e.g., "user", "assistant", "system"
+	Content string
+}
+
+// Client is the interface that all LLM clients must implement.
+type Client interface {
+	GenerateResponse(ctx context.Context, messages []Message) (string, error)
+	Models() []string // Added Models method
+}
+
+// Provider represents an LLM provider.
+type Provider interface {
+	// NewClient returns a new Client instance for the given model name and apiKey.
+	NewClient(modelName string, apiKey string) (Client, error)
+	// Models returns a list of model names supported by this provider.
+	Models() []string
+}
+
+var (
+	// Mutex for thread-safe access to the provider registry.
+	registryMutex sync.Mutex
+	// Map of provider names to Provider instances.
+	providers = make(map[string]Provider)
+	// Map of model names to provider names.
+	modelToProvider = make(map[string]string)
+)
+
+// RegisterProvider registers a provider with the llm package.
+func RegisterProvider(providerName string, provider Provider) {
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
+
+	providers[providerName] = provider
+	for _, model := range provider.Models() {
+		modelToProvider[model] = providerName
+	}
+}
+
+// Models returns all models from all registered providers.
+func Models() []string {
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
+
+	models := make([]string, 0, len(modelToProvider))
+	for model := range modelToProvider {
+		models = append(models, model)
+	}
+	return models
+}
+
+// NewClient returns a Client for the given model name.
+func NewClient(modelName string, apiKey string) (Client, error) {
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
+
+	providerName, ok := modelToProvider[modelName]
+	if !ok {
+		return nil, fmt.Errorf("model %s not supported", modelName)
+	}
+	provider, ok := providers[providerName]
+	if !ok {
+		return nil, fmt.Errorf("provider %s not found for model %s", providerName, modelName)
+	}
+	return provider.NewClient(modelName, apiKey)
+}
+
+func init() {
+	// Initialize and register providers
+	openAIProvider := NewOpenAIProvider()
+	RegisterProvider("openai", openAIProvider)
+	mockProvider := NewMockProvider()
+	RegisterProvider("mock", mockProvider)
+}
+```
+EOF_/home/stevegt/lab/aidss/llm/llm.go

@@ -27,10 +27,10 @@ type ChatCompletionMessage struct {
 
 // ChatCompletionRequest struct represents a request to the OpenAI chat completion API
 type ChatCompletionRequest struct {
-	Model       string                   `json:"model"`
-	Messages    []ChatCompletionMessage  `json:"messages"`
-	MaxTokens   int                      `json:"max_tokens"`
-	Temperature float32                  `json:"temperature"`
+	Model       string                  `json:"model"`
+	Messages    []ChatCompletionMessage `json:"messages"`
+	MaxTokens   int                     `json:"max_tokens"`
+	Temperature float32                 `json:"temperature"`
 }
 
 // ChatCompletionResponse struct represents a response from the OpenAI chat completion API
@@ -43,33 +43,82 @@ type ChatCompletionChoice struct {
 	Message ChatCompletionMessage `json:"message"`
 }
 
-// Client is the interface that wraps the CreateChatCompletion method
-type Client interface {
-	CreateChatCompletion(ctx context.Context, req ChatCompletionRequest) (ChatCompletionResponse, error)
+// OpenAI implements Client interface
+type OpenAI struct {
+	apiKey      string
+	model       string
+	maxTokens   int
+	temperature float32
 }
 
-// openAIClient implements Client interface
-type openAIClient struct {
-	apiKey string
+// OpenAIProvider implements Provider interface
+type OpenAIProvider struct{}
+
+// NewOpenAIProvider creates a new instance of OpenAIProvider
+func NewOpenAIProvider() *OpenAIProvider {
+	return &OpenAIProvider{}
 }
 
-// NewClient creates a new instance of OpenAI client
-func NewClient(apiKey string) Client {
-	return &openAIClient{apiKey: apiKey}
+// NewClient returns a new OpenAI client for the given model
+func (p *OpenAIProvider) NewClient(modelName string, apiKey string) (Client, error) {
+	return &OpenAI{
+		apiKey:      apiKey,
+		model:       modelName,
+		maxTokens:   128000,
+		temperature: 0.7,
+	}, nil
+}
+
+// Models returns the models available in OpenAI
+func (p *OpenAIProvider) Models() []string {
+	return []string{GPT4o, O1Mini, O1Preview}
 }
 
 // CreateChatCompletion sends a request to the OpenAI API and returns a completion response
-func (c *openAIClient) CreateChatCompletion(ctx context.Context, req ChatCompletionRequest) (ChatCompletionResponse, error) {
+func (o *OpenAI) CreateChatCompletion(ctx context.Context, req ChatCompletionRequest) (ChatCompletionResponse, error) {
 	// Mocked response for demonstration purposes
-	if c.apiKey == "" {
+	if o.apiKey == "" {
 		return ChatCompletionResponse{}, errors.New("API key is not set")
 	}
 
 	response := ChatCompletionResponse{
 		Choices: []ChatCompletionChoice{
-			{Message: ChatCompletionMessage{Role: ChatMessageRoleAssistant, Content: "This is a placeholder response."}},
+			{Message: ChatCompletionMessage{Role: ChatMessageRoleAssistant, Content: "This is a placeholder response from OpenAI."}},
 		},
 	}
 
 	return response, nil
 }
+
+// GenerateResponse implements the Client interface
+func (o *OpenAI) GenerateResponse(ctx context.Context, messages []Message) (string, error) {
+	// Convert Messages to ChatCompletionMessages
+	var chatMessages []ChatCompletionMessage
+	for _, msg := range messages {
+		chatMessages = append(chatMessages, ChatCompletionMessage{
+			Role:    msg.Role,
+			Content: msg.Content,
+		})
+	}
+
+	req := ChatCompletionRequest{
+		Model:       o.model,
+		Messages:    chatMessages,
+		MaxTokens:   o.maxTokens,
+		Temperature: o.temperature,
+	}
+
+	resp, err := o.CreateChatCompletion(ctx, req)
+	if err != nil {
+		return "", err
+	}
+
+	return resp.Choices[0].Message.Content, nil
+}
+
+/*
+// Models returns the models available in OpenAI (for completeness)
+func (o *OpenAI) Models() []string {
+	return []string{GPT4o, O1Mini, O1Preview}
+}
+*/

@@ -22,12 +22,10 @@ import (
 )
 
 var (
-	watchPath string
-	client    llm.Client
-	// model = llm.GPT4o
-	model = llm.O1Mini
-	// model = llm.O1Preview
-	maxTokens              = 128000
+	watchPath   string
+	client      llm.Client
+	model       string
+	maxTokens   = 128000
 	temperature float32    = 0.7 // Adjust as needed
 	mutex       sync.Mutex       // To handle concurrent access
 
@@ -45,22 +43,15 @@ func main() {
 		},
 	}
 
-	models := map[string]string{
-		"gpt-4o":     llm.GPT4o,
-		"o1-mini":    llm.O1Mini,
-		"o1-preview": llm.O1Preview,
-	}
+	// Get available models from llm package
+	models := llm.Models()
 
-	// make sure usage include model names
-	var modelNames []string
-	for name := range models {
-		modelNames = append(modelNames, name)
-	}
-	modelUsage := fmt.Sprintf("Model to use (%s)", strings.Join(modelNames, ", "))
+	// Make sure usage includes model names
+	modelUsage := fmt.Sprintf("Model to use (%s)", strings.Join(models, ", "))
 
 	// Define flags
 	rootCmd.Flags().StringVarP(&watchPath, "path", "p", ".", "Path to watch")
-	rootCmd.Flags().StringVarP(&model, "model", "m", "gpt-4o", modelUsage)
+	rootCmd.Flags().StringVarP(&model, "model", "m", models[0], modelUsage)
 
 	// Execute the root command
 	if err := rootCmd.Execute(); err != nil {
@@ -68,14 +59,17 @@ func main() {
 	}
 }
 
-// startDaemon starts the decision tool daemon.  The daemon watches the file system for changes
+// startDaemon starts the decision tool daemon. The daemon watches the file system for changes
 // and responds to user messages and attachments.
 func startDaemon() {
-
-	// set up the LLM client
+	// Set up the LLM client
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	Assert(apiKey != "", "OPENAI_API_KEY environment variable must be set")
-	client = llm.NewClient(apiKey)
+	var err error
+	client, err = llm.NewClient(model, apiKey)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Start the file watcher
 	watcher, err := fsnotify.NewWatcher()
@@ -173,7 +167,7 @@ func handleUserMessage(path string) {
 	contextMessages := buildContextMessages(path)
 
 	// Append the new message
-	contextMessages = append(contextMessages, llm.ChatCompletionMessage{
+	contextMessages = append(contextMessages, llm.Message{
 		Role:    llm.ChatMessageRoleUser,
 		Content: string(message),
 	})
@@ -187,7 +181,7 @@ func handleUserMessage(path string) {
 
 	if attachmentsContent != "" {
 		// Add the attachments content to the system prompt
-		contextMessages = append([]llm.ChatCompletionMessage{
+		contextMessages = append([]llm.Message{
 			{
 				Role:    llm.ChatMessageRoleSystem,
 				Content: "The following attachments are included:\n" + attachmentsContent,
@@ -212,8 +206,8 @@ func handleUserMessage(path string) {
 
 // buildContextMessages builds a list of chat messages from the root to the current directory
 // to provide context to the language model
-func buildContextMessages(path string) []llm.ChatCompletionMessage {
-	var messages []llm.ChatCompletionMessage
+func buildContextMessages(path string) []llm.Message {
+	var messages []llm.Message
 	var paths []string
 
 	// Collect paths from root to current directory
@@ -230,13 +224,13 @@ func buildContextMessages(path string) []llm.ChatCompletionMessage {
 	// Build messages from collected paths
 	for _, p := range paths {
 		if content, err := ioutil.ReadFile(filepath.Join(p, promptFn)); err == nil {
-			messages = append(messages, llm.ChatCompletionMessage{
+			messages = append(messages, llm.Message{
 				Role:    llm.ChatMessageRoleUser,
 				Content: string(content),
 			})
 		}
 		if content, err := ioutil.ReadFile(filepath.Join(p, responseFn)); err == nil {
-			messages = append(messages, llm.ChatCompletionMessage{
+			messages = append(messages, llm.Message{
 				Role:    llm.ChatMessageRoleAssistant,
 				Content: string(content),
 			})
@@ -268,22 +262,13 @@ func getAttachmentsContent(path string) (string, error) {
 	return contentBuilder.String(), nil
 }
 
-func getLLMResponse(messages []llm.ChatCompletionMessage) (string, error) {
+func getLLMResponse(messages []llm.Message) (string, error) {
 	ctx := context.Background()
-
-	req := llm.ChatCompletionRequest{
-		Model:       model,
-		Messages:    messages,
-		MaxTokens:   maxTokens,
-		Temperature: temperature,
-	}
-
-	resp, err := client.CreateChatCompletion(ctx, req)
+	response, err := client.GenerateResponse(ctx, messages)
 	if err != nil {
 		return "", err
 	}
-
-	return resp.Choices[0].Message.Content, nil
+	return response, nil
 }
 
 func handlePDFAttachment(pdfPath string, extractTextFunc func(string) (string, error)) {
@@ -388,7 +373,7 @@ func summarizePath(path string) {
 
 func getSummary(text string) (string, error) {
 	summaryPrompt := fmt.Sprintf("Please provide a concise summary of the following conversation:\n\n%s", text)
-	messages := []llm.ChatCompletionMessage{
+	messages := []llm.Message{
 		{
 			Role:    llm.ChatMessageRoleUser,
 			Content: summaryPrompt,

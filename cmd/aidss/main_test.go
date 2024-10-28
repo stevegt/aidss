@@ -17,20 +17,16 @@ import (
 
 type MockLLMClient struct{}
 
-func (c *MockLLMClient) CreateChatCompletion(ctx context.Context, req llm.ChatCompletionRequest) (llm.ChatCompletionResponse, error) {
+func (c *MockLLMClient) GenerateResponse(ctx context.Context, messages []llm.Message) (string, error) {
 	// Return a mock response
-	return llm.ChatCompletionResponse{
-		Choices: []llm.ChatCompletionChoice{
-			{
-				Message: llm.ChatCompletionMessage{
-					Content: "Mock response",
-				},
-			},
-		},
-	}, nil
+	return "Mock response", nil
 }
 
-// Replace the client with a mock
+func (c *MockLLMClient) Models() []string {
+	return []string{"mock-model"}
+}
+
+// Replace the client with a mock in the tests
 func init() {
 	client = &MockLLMClient{}
 }
@@ -68,6 +64,7 @@ func TestSanitizeDescriptor(t *testing.T) {
 }
 
 func TestGenerateUUID(t *testing.T) {
+	// Generate a UUID and ensure it's valid
 	id := generateUUID()
 	_, err := uuid.Parse(id)
 	if err != nil {
@@ -146,7 +143,7 @@ func TestBuildContextMessages(t *testing.T) {
 	messages := buildContextMessages(subDir)
 
 	// Expected messages
-	expectedMessages := []llm.ChatCompletionMessage{
+	expectedMessages := []llm.Message{
 		{Role: llm.ChatMessageRoleUser, Content: "Root message"},
 		{Role: llm.ChatMessageRoleAssistant, Content: "Root response"},
 		{Role: llm.ChatMessageRoleUser, Content: "Subdir message"},
@@ -193,7 +190,7 @@ func TestGetAttachmentsContent(t *testing.T) {
 
 func TestGetLLMResponse(t *testing.T) {
 	// Mock messages
-	messages := []llm.ChatCompletionMessage{
+	messages := []llm.Message{
 		{Role: llm.ChatMessageRoleUser, Content: "Hello"},
 	}
 
@@ -370,7 +367,7 @@ func TestAddWatcherRecursive(t *testing.T) {
 func TestGetSummary(t *testing.T) {
 	// Mock getLLMResponse
 	originalGetLLMResponse := getLLMResponse
-	getLLMResponse = func(messages []llm.ChatCompletionMessage) (string, error) {
+	getLLMResponse = func(messages []llm.Message) (string, error) {
 		return "Mock summary", nil
 	}
 	defer func() { getLLMResponse = originalGetLLMResponse }()
