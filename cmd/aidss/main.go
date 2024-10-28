@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -26,6 +27,13 @@ var (
 	promptFn   = "prompt.txt"
 	responseFn = "response.txt"
 )
+
+type Prompt struct {
+	InFiles    []string
+	OutFiles   []string
+	SysMsg     string
+	PromptText string
+}
 
 func main() {
 	// Initialize and register providers
@@ -151,43 +159,97 @@ func addWatcherRecursive(watcher *fsnotify.Watcher, path string) error {
 	return nil
 }
 
+// parsePromptFile parses the prompt file and returns a Prompt struct
+func parsePromptFile(filename string) (*Prompt, error) {
+	data, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	content := string(data)
+	prompt := &Prompt{}
+
+	// Split headers and prompt text
+	parts := strings.SplitN(content, "\n\n", 2)
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("Invalid prompt file format")
+	}
+
+	headers := parts[0]
+	prompt.PromptText = parts[1]
+
+	lines := strings.Split(headers, "\n")
+	currentSection := ""
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		switch {
+		case line == "In:":
+			currentSection = "In"
+		case line == "Out:":
+			currentSection = "Out"
+		case strings.HasPrefix(line, "Sysmsg:"):
+			currentSection = "Sysmsg"
+			prompt.SysMsg = strings.TrimSpace(strings.TrimPrefix(line, "Sysmsg:"))
+		default:
+			switch currentSection {
+			case "In":
+				prompt.InFiles = append(prompt.InFiles, line)
+			case "Out":
+				prompt.OutFiles = append(prompt.OutFiles, line)
+			case "Sysmsg":
+				prompt.SysMsg += "\n" + line
+			default:
+				// Ignore unknown sections
+			}
+		}
+	}
+	return prompt, nil
+}
+
 // handleUserMessage handles a user message by generating a response from the language model
 func handleUserMessage(path string, client llm.Client, watchPath string) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
 	messagePath := filepath.Join(path, promptFn)
-	message, err := ioutil.ReadFile(messagePath)
+	prompt, err := parsePromptFile(messagePath)
 	if err != nil {
-		log.Println("Error reading user message:", err)
+		log.Println("Error parsing prompt file:", err)
 		return
 	}
 
 	// Build context messages
 	contextMessages := buildContextMessages(path, watchPath)
 
-	// Append the new message
-	contextMessages = append(contextMessages, llm.Message{
-		Role:    llm.ChatMessageRoleUser,
-		Content: string(message),
-	})
+	// Add system message if provided
+	if prompt.SysMsg != "" {
+		contextMessages = append(contextMessages, llm.Message{
+			Role:    llm.ChatMessageRoleSystem,
+			Content: prompt.SysMsg,
+		})
+	}
 
-	// Check if any attachments need to be included
-	attachmentsContent, err := getAttachmentsContent(path)
+	// Read and include contents of InFiles
+	inFilesContent, err := readInFilesContent(prompt.InFiles, watchPath)
 	if err != nil {
-		log.Println("Error reading attachments:", err)
+		log.Println("Error reading In files:", err)
 		return
 	}
 
-	if attachmentsContent != "" {
-		// Add the attachments content to the system prompt
-		contextMessages = append([]llm.Message{
-			{
-				Role:    llm.ChatMessageRoleSystem,
-				Content: "The following attachments are included:\n" + attachmentsContent,
-			},
-		}, contextMessages...)
+	// Build the user message
+	userContent := Spf("%s\n\n", prompt.PromptText)
+	if len(inFilesContent) > 0 {
+		userContent += "The following files are attached:\n" + inFilesContent + "\n"
 	}
+
+	// Append the new user message
+	contextMessages = append(contextMessages, llm.Message{
+		Role:    llm.ChatMessageRoleUser,
+		Content: userContent,
+	})
 
 	response, err := getLLMResponse(contextMessages, client)
 	if err != nil {
@@ -195,6 +257,7 @@ func handleUserMessage(path string, client llm.Client, watchPath string) {
 		return
 	}
 
+	// Save the LLM response
 	responsePath := filepath.Join(path, responseFn)
 	err = ioutil.WriteFile(responsePath, []byte(response), 0644)
 	if err != nil {
@@ -202,6 +265,66 @@ func handleUserMessage(path string, client llm.Client, watchPath string) {
 	}
 
 	log.Println("LLM response written to:", responsePath)
+
+	// Parse the LLM response for updated files
+	err = processLLMResponse(response, prompt.OutFiles, watchPath)
+	if err != nil {
+		log.Println("Error processing LLM response:", err)
+	}
+}
+
+func readInFilesContent(inFiles []string, watchPath string) (string, error) {
+	var contentBuilder strings.Builder
+	parentDir := filepath.Dir(watchPath)
+	for _, relPath := range inFiles {
+		absPath := filepath.Join(parentDir, relPath)
+		data, err := ioutil.ReadFile(absPath)
+		if err != nil {
+			return "", fmt.Errorf("error reading file %s: %v", absPath, err)
+		}
+		contentBuilder.WriteString(fmt.Sprintf("<IN filename=\"%s\">\n%s\n</IN>\n", relPath, string(data)))
+	}
+	return contentBuilder.String(), nil
+}
+
+func processLLMResponse(response string, outFiles []string, watchPath string) error {
+	parentDir := filepath.Dir(watchPath)
+
+	// Regular expression to match <OUT filename="...">...</OUT>
+	re := regexp.MustCompile(`<OUT\s+filename="([^"]+)">\s*(?s)(.*?)</OUT>`)
+	matches := re.FindAllStringSubmatch(response, -1)
+
+	if len(matches) == 0 {
+		return fmt.Errorf("no <OUT> sections found in the LLM response")
+	}
+
+	for _, match := range matches {
+		filename := match[1]
+		content := match[2]
+
+		// Check if the filename is in the OutFiles list
+		found := false
+		for _, outFile := range outFiles {
+			if outFile == filename {
+				found = true
+				break
+			}
+		}
+		if !found {
+			log.Printf("Filename %s not specified in Out: section, skipping.", filename)
+			continue
+		}
+
+		// Write the content to the corresponding file
+		absPath := filepath.Join(parentDir, filename)
+		err := ioutil.WriteFile(absPath, []byte(content), 0644)
+		if err != nil {
+			log.Printf("Error writing to file %s: %v", absPath, err)
+			continue
+		}
+		log.Printf("Updated file written to: %s", absPath)
+	}
+	return nil
 }
 
 // buildContextMessages builds a list of chat messages from the root to the current directory

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -53,8 +54,23 @@ func TestHandleUserMessage(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// Create prompt.txt
-	messageContent := "Test message"
-	err = ioutil.WriteFile(filepath.Join(tempDir, "prompt.txt"), []byte(messageContent), 0644)
+	promptContent := `In:
+test_in.txt
+Out:
+test_out.txt
+Sysmsg: Test Sys Message
+
+Test prompt text.`
+
+	err = ioutil.WriteFile(filepath.Join(tempDir, "prompt.txt"), []byte(promptContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create test_in.txt
+	parentDir := filepath.Dir(tempDir)
+	inFilePath := filepath.Join(parentDir, "test_in.txt")
+	err = ioutil.WriteFile(inFilePath, []byte("Content of test_in.txt"), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,6 +97,106 @@ func TestHandleUserMessage(t *testing.T) {
 
 	if string(data) != "This is a mock response." {
 		t.Errorf("Expected 'This is a mock response.', got '%s'", string(data))
+	}
+}
+
+func TestParsePromptFile(t *testing.T) {
+	promptContent := `In:
+file1.txt
+file2.txt
+Out:
+output1.txt
+output2.txt
+Sysmsg: This is a system message
+
+This is the prompt text.`
+
+	tempFile, err := ioutil.TempFile("", "prompt_*.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tempFile.Name())
+
+	_, err = tempFile.WriteString(promptContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	prompt, err := parsePromptFile(tempFile.Name())
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	expectedInFiles := []string{"file1.txt", "file2.txt"}
+	expectedOutFiles := []string{"output1.txt", "output2.txt"}
+	expectedSysMsg := "This is a system message"
+	expectedPromptText := "This is the prompt text."
+
+	if !equalStringSlices(prompt.InFiles, expectedInFiles) {
+		t.Errorf("Expected InFiles %v, got %v", expectedInFiles, prompt.InFiles)
+	}
+	if !equalStringSlices(prompt.OutFiles, expectedOutFiles) {
+		t.Errorf("Expected OutFiles %v, got %v", expectedOutFiles, prompt.OutFiles)
+	}
+	if prompt.SysMsg != expectedSysMsg {
+		t.Errorf("Expected SysMsg '%s', got '%s'", expectedSysMsg, prompt.SysMsg)
+	}
+	if prompt.PromptText != expectedPromptText {
+		t.Errorf("Expected PromptText '%s', got '%s'", expectedPromptText, prompt.PromptText)
+	}
+}
+
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	m := make(map[string]int)
+	for _, x := range a {
+		m[x]++
+	}
+	for _, x := range b {
+		if m[x] == 0 {
+			return false
+		}
+		m[x]--
+	}
+	return true
+}
+
+func TestProcessLLMResponse(t *testing.T) {
+	response := `<OUT filename="output1.txt">
+Content for output1
+</OUT>
+
+<OUT filename="output2.txt">
+Content for output2
+</OUT>`
+
+	tempDir, err := ioutil.TempDir("", "test_process_response")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	parentDir := filepath.Dir(tempDir)
+	outFiles := []string{"output1.txt", "output2.txt"}
+
+	err = processLLMResponse(response, outFiles, tempDir)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	// Check if files are written correctly
+	for _, fname := range outFiles {
+		absPath := filepath.Join(parentDir, fname)
+		data, err := ioutil.ReadFile(absPath)
+		if err != nil {
+			t.Fatalf("Expected file %s to be created, got error: %v", absPath, err)
+		}
+		expectedContent := fmt.Sprintf("Content for %s", strings.TrimSuffix(fname, ".txt"))
+		if string(data) != expectedContent {
+			t.Errorf("Expected content '%s', got '%s'", expectedContent, string(data))
+		}
 	}
 }
 

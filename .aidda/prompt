@@ -26,7 +26,15 @@ the watchpath is ~/lab/foo/.aidss, then the message might be in
 A goal is to allow the user to specify files to be attached to the
 prompt message.  
 
-- The prompt file should be formatted similar to an rfc822 message:
+- The prompt file should be formatted similar to an rfc822 message
+- In and Out headers might contain one or more filenames on the same
+  line, and/or on continuation lines that are indented.  Filenames are
+  space-delimited.
+- Sysmsg header might contain multiple lines of text, indented.
+- <OUT> tags might be nested, so we can't use a regular expression to
+  parse them.  We need to use an XML parser.
+- we should parse looking for each file in the outfiles list and warn
+  if a file is not found in the XML.
 ```
 In: 
  cmd/aidss/main.go
@@ -63,5 +71,3 @@ package main
  [...]
 </OUT>
 ```
-
-
