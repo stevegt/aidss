@@ -16,18 +16,14 @@ import (
 	"github.com/spf13/cobra"
 	"rsc.io/pdf"
 
-	"github.com/stevegt/aidss/openai"
+	openai "github.com/stevegt/aidss/llm"
 
 	. "github.com/stevegt/goadapt"
 )
 
-type OpenAIClient interface {
-	CreateChatCompletion(ctx context.Context, req openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error)
-}
-
 var (
 	watchPath string
-	client    OpenAIClient
+	client    openai.Client
 	// model = openai.GPT4o
 	model = openai.O1Mini
 	// model = openai.O1Preview
@@ -79,7 +75,7 @@ func startDaemon() {
 	// set up the OpenAI client
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	Assert(apiKey != "", "OPENAI_API_KEY environment variable must be set")
-	client = openai.NewOpenAIClient(apiKey)
+	client = openai.NewClient(apiKey)
 
 	// Start the file watcher
 	watcher, err := fsnotify.NewWatcher()

@@ -3,10 +3,11 @@ Content-Transfer-Encoding: quoted-printable
 In: 
  cmd/aidss/main.go
  cmd/aidss/main_test.go
+ llm/openai.go
 Out: 
  cmd/aidss/main.go
  cmd/aidss/main_test.go
- openai/openai.go
+ llm/openai.go
 Sysmsg: You are an expert Go programmer. Please make the requested changes
  to the given code or documentation.
 
@@ -14,8 +15,8 @@ Move all of the openai API calls to a separate package and add an
 interface to the package.  The goal is to be able to easily swap out
 the openai API with a different API in the future, and to be able to 
 mock the API calls to make the code more testable.
-1. Create a new package called openai.
+1. Create a new package called llm.
 2. Move all of the openai API calls to the new package.
 3. Add an interface to the new package that defines the API calls.
 4. Modify the existing code to use the new package and interface.
-5. Add tests for the new package and interface.
+5. Replace all references to "openai" with "llm" in main.go and main_test.go.

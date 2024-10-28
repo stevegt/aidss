@@ -83,9 +83,9 @@ func TestHandleUserMessage(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Create user_message.txt
+	// Create prompt.txt
 	messageContent := "Test message"
-	err = ioutil.WriteFile(filepath.Join(tempDir, "user_message.txt"), []byte(messageContent), 0644)
+	err = ioutil.WriteFile(filepath.Join(tempDir, "prompt.txt"), []byte(messageContent), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,11 +96,11 @@ func TestHandleUserMessage(t *testing.T) {
 	// Call handleUserMessage
 	handleUserMessage(tempDir)
 
-	// Check llm_response.txt
-	responsePath := filepath.Join(tempDir, "llm_response.txt")
+	// Check response.txt
+	responsePath := filepath.Join(tempDir, "response.txt")
 	data, err := ioutil.ReadFile(responsePath)
 	if err != nil {
-		t.Fatalf("Expected llm_response.txt to be created, got error: %v", err)
+		t.Fatalf("Expected response.txt to be created, got error: %v", err)
 	}
 
 	if string(data) != "Mock response" {
@@ -122,22 +122,22 @@ func TestBuildContextMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create user_message.txt and llm_response.txt in root
-	err = ioutil.WriteFile(filepath.Join(rootDir, "user_message.txt"), []byte("Root message"), 0644)
+	// Create prompt.txt and response.txt in root
+	err = ioutil.WriteFile(filepath.Join(rootDir, "prompt.txt"), []byte("Root message"), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = ioutil.WriteFile(filepath.Join(rootDir, "llm_response.txt"), []byte("Root response"), 0644)
+	err = ioutil.WriteFile(filepath.Join(rootDir, "response.txt"), []byte("Root response"), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Create user_message.txt and llm_response.txt in subdir
-	err = ioutil.WriteFile(filepath.Join(subDir, "user_message.txt"), []byte("Subdir message"), 0644)
+	// Create prompt.txt and response.txt in subdir
+	err = ioutil.WriteFile(filepath.Join(subDir, "prompt.txt"), []byte("Subdir message"), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = ioutil.WriteFile(filepath.Join(subDir, "llm_response.txt"), []byte("Subdir response"), 0644)
+	err = ioutil.WriteFile(filepath.Join(subDir, "response.txt"), []byte("Subdir response"), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,11 +261,11 @@ func TestSummarizePath(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// Create conversation files
-	err = ioutil.WriteFile(filepath.Join(tempDir, "user_message.txt"), []byte("User message"), 0644)
+	err = ioutil.WriteFile(filepath.Join(tempDir, "prompt.txt"), []byte("User message"), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = ioutil.WriteFile(filepath.Join(tempDir, "llm_response.txt"), []byte("LLM response"), 0644)
+	err = ioutil.WriteFile(filepath.Join(tempDir, "response.txt"), []byte("LLM response"), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
