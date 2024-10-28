@@ -259,8 +259,10 @@ func getAttachmentsContent(path string) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			contentBuilder.WriteString("Attachment: " + file.Name() + "\n")
-			contentBuilder.WriteString(string(attachmentContent) + "\n")
+			// Delimit attachments with unique XML tags
+			contentBuilder.WriteString(fmt.Sprintf("<IN filename=\"%s\">\n", file.Name()))
+			contentBuilder.WriteString(string(attachmentContent))
+			contentBuilder.WriteString("\n</IN>\n")
 		}
 	}
 

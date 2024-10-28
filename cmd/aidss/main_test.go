@@ -162,7 +162,7 @@ func TestGetAttachmentsContent(t *testing.T) {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
-	expectedContent := "Attachment: attachment.pdf.txt\n" + attachmentContent + "\n"
+	expectedContent := "<Attachment filename=\"attachment.pdf.txt\">\n" + attachmentContent + "\n</Attachment>\n"
 	if content != expectedContent {
 		t.Errorf("Expected content:\n%s\nGot:\n%s", expectedContent, content)
 	}

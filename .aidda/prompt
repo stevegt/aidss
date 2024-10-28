@@ -15,6 +15,53 @@ Out:
 Sysmsg: You are an expert Go programmer. Please make the requested changes
  to the given code or documentation.
 
-Instead of marking attached files as "Attachment:", delimit them with
-unique XML tags.
+A goal is to keep messages in the watchPath tree but working files
+elsewhere.  For example, if the base of a git repo is ~/lab/foo, and
+the watchpath is ~/lab/foo/.aidss, then the message might be in
+~/lab/foo/.aidss/round1/round2/, and an attached file might be in
+~/lab/foo/doc/ideas.txt.
+
+- Attached file paths should be relative to the parent of the watchPath.
+
+A goal is to allow the user to specify files to be attached to the
+prompt message.  
+
+- The prompt file should be formatted similar to an rfc822 message:
+```
+In: 
+ cmd/aidss/main.go
+ cmd/aidss/main_test.go
+ llm/openai.go
+ llm/mock.go
+ llm/llm.go
+Out: 
+ cmd/aidss/main.go
+ cmd/aidss/main_test.go
+ llm/openai.go
+ llm/mock.go
+ llm/llm.go
+Sysmsg: You are an expert Go programmer. Please make the requested changes
+ to the given code or documentation.
+
+Prompt text here.
+```
+
+A goal is to allow the LLM to provide updated files to the user.  The
+user should be able to specify the files to be updated in the prompt
+message by listing them in the "Out:" section.  The LLM should be able
+to provide updated files in the response message.  The LLM should
+delimit the files with unique XML tags.  For example, the LLM might
+provide updated files as follows:
+```
+<OUT filename="cmd/aidss/main.go">
+package main
+ [...]
+</OUT>
+
+<OUT filename="cmd/aidss/main_test.go">
+package main
+ [...]
+</OUT>
+```
+
 

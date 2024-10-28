@@ -19,11 +19,11 @@ import (
 	"rsc.io/pdf"
 
 	"github.com/stevegt/aidss/llm"
-	// . "github.com/stevegt/goadapt"
+	. "github.com/stevegt/goadapt"
 )
 
 var (
-	mutex     sync.Mutex // To handle concurrent access
+	mutex sync.Mutex // To handle concurrent access
 
 	promptFn   = "prompt.txt"
 	responseFn = "response.txt"
@@ -41,8 +41,10 @@ func main() {
 		Use:   "decision_tool",
 		Short: "Decision Support Tool",
 		Run: func(cmd *cobra.Command, args []string) {
-			watchPath, _ := cmd.Flags().GetString("path")
-			modelName, _ := cmd.Flags().GetString("model")
+			watchPath, err := cmd.Flags().GetString("path")
+			Ck(err)
+			modelName, err := cmd.Flags().GetString("model")
+			Ck(err)
 			startDaemon(watchPath, modelName)
 		},
 	}
@@ -214,9 +216,13 @@ func buildContextMessages(path string, watchPath string) []llm.Message {
 	currentPath := path
 	for {
 		paths = append([]string{currentPath}, paths...)
+		if currentPath == watchPath {
+			// stop at the watch path
+			break
+		}
 		parentPath := filepath.Dir(currentPath)
-		// stop at watchPath
-		if parentPath == currentPath || parentPath == watchPath {
+		if parentPath == currentPath {
+			// stop at the filesystem root
 			break
 		}
 		currentPath = parentPath
@@ -255,8 +261,10 @@ func getAttachmentsContent(path string) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			contentBuilder.WriteString("Attachment: " + file.Name() + "\n")
-			contentBuilder.WriteString(string(attachmentContent) + "\n")
+			// Delimit attachments with unique XML tags
+			contentBuilder.WriteString(fmt.Sprintf("<Attachment filename=\"%s\">\n", file.Name()))
+			contentBuilder.WriteString(string(attachmentContent))
+			contentBuilder.WriteString("\n</Attachment>\n")
 		}
 	}
 
@@ -566,7 +574,7 @@ func TestGetAttachmentsContent(t *testing.T) {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
-	expectedContent := "Attachment: attachment.pdf.txt\n" + attachmentContent + "\n"
+	expectedContent := "<Attachment filename=\"attachment.pdf.txt\">\n" + attachmentContent + "\n</Attachment>\n"
 	if content != expectedContent {
 		t.Errorf("Expected content:\n%s\nGot:\n%s", expectedContent, content)
 	}
