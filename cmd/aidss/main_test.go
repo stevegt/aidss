@@ -55,10 +55,11 @@ func TestHandleUserMessage(t *testing.T) {
 
 	// Create prompt.txt
 	promptContent := `In:
-test_in.txt
+ test_in.txt
 Out:
-test_out.txt
+ test_out.txt
 Sysmsg: Test Sys Message
+ Additional sys message line.
 
 Test prompt text.`
 
@@ -102,12 +103,12 @@ Test prompt text.`
 
 func TestParsePromptFile(t *testing.T) {
 	promptContent := `In:
-file1.txt
-file2.txt
+ file1.txt file2.txt
 Out:
-output1.txt
-output2.txt
+ output1.txt
+ output2.txt
 Sysmsg: This is a system message
+ Continued sys message.
 
 This is the prompt text.`
 
@@ -129,7 +130,7 @@ This is the prompt text.`
 
 	expectedInFiles := []string{"file1.txt", "file2.txt"}
 	expectedOutFiles := []string{"output1.txt", "output2.txt"}
-	expectedSysMsg := "This is a system message"
+	expectedSysMsg := "This is a system message Continued sys message."
 	expectedPromptText := "This is the prompt text."
 
 	if !equalStringSlices(prompt.InFiles, expectedInFiles) {
@@ -278,7 +279,7 @@ func TestGetAttachmentsContent(t *testing.T) {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
-	expectedContent := "<Attachment filename=\"attachment.pdf.txt\">\n" + attachmentContent + "\n</Attachment>\n"
+	expectedContent := "<IN filename=\"attachment.pdf.txt\">\n" + attachmentContent + "\n</IN>\n"
 	if content != expectedContent {
 		t.Errorf("Expected content:\n%s\nGot:\n%s", expectedContent, content)
 	}

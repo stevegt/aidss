@@ -3,12 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 
@@ -24,8 +24,9 @@ import (
 var (
 	mutex sync.Mutex // To handle concurrent access
 
-	promptFn   = "prompt.txt"
-	responseFn = "response.txt"
+	promptFn     = "prompt.txt"
+	promptFullFn = "prompt-full.txt"
+	responseFn   = "response.txt"
 )
 
 type Prompt struct {
@@ -175,37 +176,49 @@ func parsePromptFile(filename string) (*Prompt, error) {
 		return nil, fmt.Errorf("Invalid prompt file format")
 	}
 
-	headers := parts[0]
+	headerText := parts[0]
 	prompt.PromptText = parts[1]
 
-	lines := strings.Split(headers, "\n")
-	currentSection := ""
+	headers := make(map[string]string)
+	lines := strings.Split(headerText, "\n")
+	var currentHeader string
+	var currentValue strings.Builder
+
+	// collect header text, unwrap continuation lines
 	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
+		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+			// continuation line
+			currentValue.WriteString(Spf(" %s", strings.TrimSpace(line)))
+			headers[currentHeader] = currentValue.String()
 			continue
 		}
-		switch {
-		case line == "In:":
-			currentSection = "In"
-		case line == "Out:":
-			currentSection = "Out"
-		case strings.HasPrefix(line, "Sysmsg:"):
-			currentSection = "Sysmsg"
-			prompt.SysMsg = strings.TrimSpace(strings.TrimPrefix(line, "Sysmsg:"))
+		// New header line
+		// get header label
+		colonIndex := strings.Index(line, ":")
+		if colonIndex == -1 {
+			return nil, fmt.Errorf("Header line without colon")
+		}
+		currentHeader := strings.TrimSpace(line[:colonIndex])
+		value := strings.TrimSpace(line[colonIndex+1:])
+		currentValue.Reset()
+		currentValue.WriteString(value)
+		headers[currentHeader] = currentValue.String()
+	}
+
+	// Now process headers
+	for key, value := range headers {
+		switch key {
+		case "In":
+			prompt.InFiles = append(prompt.InFiles, strings.Fields(value)...)
+		case "Out":
+			prompt.OutFiles = append(prompt.OutFiles, strings.Fields(value)...)
+		case "Sysmsg":
+			prompt.SysMsg = value
 		default:
-			switch currentSection {
-			case "In":
-				prompt.InFiles = append(prompt.InFiles, line)
-			case "Out":
-				prompt.OutFiles = append(prompt.OutFiles, line)
-			case "Sysmsg":
-				prompt.SysMsg += "\n" + line
-			default:
-				// Ignore unknown sections
-			}
+			// Ignore unknown headers
 		}
 	}
+
 	return prompt, nil
 }
 
@@ -290,40 +303,59 @@ func readInFilesContent(inFiles []string, watchPath string) (string, error) {
 func processLLMResponse(response string, outFiles []string, watchPath string) error {
 	parentDir := filepath.Dir(watchPath)
 
-	// Regular expression to match <OUT filename="...">...</OUT>
-	re := regexp.MustCompile(`<OUT\s+filename="([^"]+)">\s*(?s)(.*?)</OUT>`)
-	matches := re.FindAllStringSubmatch(response, -1)
+	// Wrap the response in a root element to make it valid XML
+	wrappedResponse := "<root>" + response + "</root>"
 
-	if len(matches) == 0 {
-		return fmt.Errorf("no <OUT> sections found in the LLM response")
+	// Parse the XML
+	type OutFile struct {
+		Filename string `xml:"filename,attr"`
+		Content  string `xml:",innerxml"`
+	}
+	type Root struct {
+		OutFiles []OutFile `xml:"OUT"`
 	}
 
-	for _, match := range matches {
-		filename := match[1]
-		content := match[2]
+	var root Root
+	err := xml.Unmarshal([]byte(wrappedResponse), &root)
+	if err != nil {
+		return fmt.Errorf("error parsing LLM response XML: %v", err)
+	}
 
-		// Check if the filename is in the OutFiles list
-		found := false
-		for _, outFile := range outFiles {
-			if outFile == filename {
-				found = true
-				break
-			}
-		}
-		if !found {
-			log.Printf("Filename %s not specified in Out: section, skipping.", filename)
+	// Map of filename to content
+	outFileContents := make(map[string]string)
+	for _, outFile := range root.OutFiles {
+		outFileContents[outFile.Filename] = outFile.Content
+	}
+
+	// For each file in outFiles, check if we have content
+	for _, filename := range outFiles {
+		content, ok := outFileContents[filename]
+		if !ok {
+			log.Printf("Warning: Filename %s specified in Out: section but not found in LLM response", filename)
 			continue
 		}
 
-		// Write the content to the corresponding file
-		absPath := filepath.Join(parentDir, filename)
-		err := ioutil.WriteFile(absPath, []byte(content), 0644)
-		if err != nil {
-			log.Printf("Error writing to file %s: %v", absPath, err)
-			continue
-		}
-		log.Printf("Updated file written to: %s", absPath)
+		// Write the content to a temporary file
+		tmpPath := filepath.Join(parentDir, filename+".tmp")
+		err := ioutil.WriteFile(tmpPath, []byte(content), 0644)
+		Ck(err)
+		// Rename the temporary file to the final filename
+		err = os.Rename(tmpPath, filepath.Join(parentDir, filename))
+		Ck(err)
+		log.Printf("Updated file written to: %s", filename)
 	}
+
+	// Warn if there are files in the LLM response not specified in OutFiles
+	outFilesSet := make(map[string]struct{})
+	for _, filename := range outFiles {
+		outFilesSet[filename] = struct{}{}
+	}
+	for filename := range outFileContents {
+		if _, ok := outFilesSet[filename]; !ok {
+			log.Printf("Warning: Filename %s found in LLM response but not specified in Out: section", filename)
+		}
+	}
+
 	return nil
 }
 
@@ -383,9 +415,7 @@ func getAttachmentsContent(path string) (string, error) {
 				return "", err
 			}
 			// Delimit attachments with unique XML tags
-			contentBuilder.WriteString(fmt.Sprintf("<IN filename=\"%s\">\n", file.Name()))
-			contentBuilder.WriteString(string(attachmentContent))
-			contentBuilder.WriteString("\n</IN>\n")
+			contentBuilder.WriteString(fmt.Sprintf("<IN filename=\"%s\">\n%s\n</IN>\n", file.Name(), string(attachmentContent)))
 		}
 	}
 

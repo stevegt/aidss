@@ -15,6 +15,13 @@ Out:
 Sysmsg: You are an expert Go programmer. Please make the requested changes
  to the given code or documentation.
 
+After we have generated the full prompt message, we should save it in a
+file in the watchPath tree.  The file should be named
+"prompt-full.txt".  This is the file that should be read when we
+later collect messages recursively to build a query.
+
+.stop
+
 A goal is to keep messages in the watchPath tree but working files
 elsewhere.  For example, if the base of a git repo is ~/lab/foo, and
 the watchpath is ~/lab/foo/.aidss, then the message might be in
