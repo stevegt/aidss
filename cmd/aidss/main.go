@@ -22,18 +22,22 @@ import (
 )
 
 var (
-	watchPath   string
-	client      llm.Client
-	model       string
-	maxTokens   = 128000
-	temperature float32    = 0.7 // Adjust as needed
-	mutex       sync.Mutex       // To handle concurrent access
+	watchPath string
+	modelName string
+	client    llm.Client
+	mutex     sync.Mutex // To handle concurrent access
 
 	promptFn   = "prompt.txt"
 	responseFn = "response.txt"
 )
 
 func main() {
+	// Initialize and register providers
+	llm.RegisterProviders()
+
+	// Get available models from llm package
+	models := llm.Models()
+
 	// Initialize the command-line interface
 	rootCmd := &cobra.Command{
 		Use:   "decision_tool",
@@ -43,15 +47,12 @@ func main() {
 		},
 	}
 
-	// Get available models from llm package
-	models := llm.Models()
-
 	// Make sure usage includes model names
 	modelUsage := fmt.Sprintf("Model to use (%s)", strings.Join(models, ", "))
 
 	// Define flags
 	rootCmd.Flags().StringVarP(&watchPath, "path", "p", ".", "Path to watch")
-	rootCmd.Flags().StringVarP(&model, "model", "m", models[0], modelUsage)
+	rootCmd.Flags().StringVarP(&modelName, "model", "m", models[0], modelUsage)
 
 	// Execute the root command
 	if err := rootCmd.Execute(); err != nil {
@@ -62,11 +63,10 @@ func main() {
 // startDaemon starts the decision tool daemon. The daemon watches the file system for changes
 // and responds to user messages and attachments.
 func startDaemon() {
-	// Set up the LLM client
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	Assert(apiKey != "", "OPENAI_API_KEY environment variable must be set")
 	var err error
-	client, err = llm.NewClient(model, apiKey)
+
+	// Set up the LLM client based on the model name
+	client, err = llm.NewClient(modelName)
 	if err != nil {
 		log.Fatal(err)
 	}

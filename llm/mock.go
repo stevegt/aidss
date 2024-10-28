@@ -5,10 +5,19 @@ import (
 )
 
 // Mock implements Client interface
-type Mock struct{}
+type Mock struct {
+	model Model
+}
 
 // MockProvider implements Provider interface
 type MockProvider struct{}
+
+// Mock model
+var mockModel = Model{
+	Name:        "mock-model",
+	MaxTokens:   1000,
+	Temperature: 0.7,
+}
 
 // NewMockProvider creates a new instance of MockProvider
 func NewMockProvider() *MockProvider {
@@ -16,23 +25,18 @@ func NewMockProvider() *MockProvider {
 }
 
 // NewClient returns a new Mock client
-func (p *MockProvider) NewClient(modelName string, apiKey string) (Client, error) {
-	return &Mock{}, nil
+func (p *MockProvider) NewClient(modelName string) (Client, error) {
+	return &Mock{
+		model: mockModel,
+	}, nil
 }
 
 // Models returns the models available in Mock
 func (p *MockProvider) Models() []string {
-	return []string{"mock-model"}
+	return []string{mockModel.Name}
 }
 
 // GenerateResponse returns a mock response
 func (m *Mock) GenerateResponse(ctx context.Context, messages []Message) (string, error) {
 	return "This is a mock response.", nil
 }
-
-/*
-// Models returns the models available in Mock (for completeness)
-func (m *Mock) Models() []string {
-	return []string{"mock-model"}
-}
-*/

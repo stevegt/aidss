@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"errors"
+	"os"
 )
 
 // Define constants for models
@@ -43,12 +44,36 @@ type ChatCompletionChoice struct {
 	Message ChatCompletionMessage `json:"message"`
 }
 
+// Model struct represents a language model with its attributes
+type Model struct {
+	Name        string
+	MaxTokens   int
+	Temperature float32
+}
+
+// Map of model names to Model structs
+var openAIModels = map[string]Model{
+	GPT4o: {
+		Name:        GPT4o,
+		MaxTokens:   128000,
+		Temperature: 0.7,
+	},
+	O1Mini: {
+		Name:        O1Mini,
+		MaxTokens:   128000,
+		Temperature: 0.7,
+	},
+	O1Preview: {
+		Name:        O1Preview,
+		MaxTokens:   128000,
+		Temperature: 0.7,
+	},
+}
+
 // OpenAI implements Client interface
 type OpenAI struct {
-	apiKey      string
-	model       string
-	maxTokens   int
-	temperature float32
+	apiKey string
+	model  Model
 }
 
 // OpenAIProvider implements Provider interface
@@ -60,18 +85,30 @@ func NewOpenAIProvider() *OpenAIProvider {
 }
 
 // NewClient returns a new OpenAI client for the given model
-func (p *OpenAIProvider) NewClient(modelName string, apiKey string) (Client, error) {
+func (p *OpenAIProvider) NewClient(modelName string) (Client, error) {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		return nil, errors.New("OPENAI_API_KEY environment variable must be set")
+	}
+
+	model, ok := openAIModels[modelName]
+	if !ok {
+		return nil, errors.New("unsupported model: " + modelName)
+	}
+
 	return &OpenAI{
-		apiKey:      apiKey,
-		model:       modelName,
-		maxTokens:   128000,
-		temperature: 0.7,
+		apiKey: apiKey,
+		model:  model,
 	}, nil
 }
 
 // Models returns the models available in OpenAI
 func (p *OpenAIProvider) Models() []string {
-	return []string{GPT4o, O1Mini, O1Preview}
+	models := make([]string, 0, len(openAIModels))
+	for modelName := range openAIModels {
+		models = append(models, modelName)
+	}
+	return models
 }
 
 // CreateChatCompletion sends a request to the OpenAI API and returns a completion response
@@ -102,10 +139,10 @@ func (o *OpenAI) GenerateResponse(ctx context.Context, messages []Message) (stri
 	}
 
 	req := ChatCompletionRequest{
-		Model:       o.model,
+		Model:       o.model.Name,
 		Messages:    chatMessages,
-		MaxTokens:   o.maxTokens,
-		Temperature: o.temperature,
+		MaxTokens:   o.model.MaxTokens,
+		Temperature: o.model.Temperature,
 	}
 
 	resp, err := o.CreateChatCompletion(ctx, req)
@@ -115,10 +152,3 @@ func (o *OpenAI) GenerateResponse(ctx context.Context, messages []Message) (stri
 
 	return resp.Choices[0].Message.Content, nil
 }
-
-/*
-// Models returns the models available in OpenAI (for completeness)
-func (o *OpenAI) Models() []string {
-	return []string{GPT4o, O1Mini, O1Preview}
-}
-*/

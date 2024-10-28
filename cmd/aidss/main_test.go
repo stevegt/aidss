@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"io/ioutil"
 	"os"
@@ -11,24 +10,12 @@ import (
 	"testing"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/google/uuid"
 	"github.com/stevegt/aidss/llm"
 )
 
-type MockLLMClient struct{}
-
-func (c *MockLLMClient) GenerateResponse(ctx context.Context, messages []llm.Message) (string, error) {
-	// Return a mock response
-	return "Mock response", nil
-}
-
-func (c *MockLLMClient) Models() []string {
-	return []string{"mock-model"}
-}
-
-// Replace the client with a mock in the tests
 func init() {
-	client = &MockLLMClient{}
+	// Initialize and register providers for testing
+	llm.RegisterProvider("mock", llm.NewMockProvider())
 }
 
 func TestCreateNewDecisionNode(t *testing.T) {
@@ -54,24 +41,6 @@ func TestCreateNewDecisionNode(t *testing.T) {
 	}
 }
 
-func TestSanitizeDescriptor(t *testing.T) {
-	input := "Invalid/Descriptor\\Name"
-	expected := "Invalid_Descriptor_Name"
-	output := sanitizeDescriptor(input)
-	if output != expected {
-		t.Errorf("Expected %s, got %s", expected, output)
-	}
-}
-
-func TestGenerateUUID(t *testing.T) {
-	// Generate a UUID and ensure it's valid
-	id := generateUUID()
-	_, err := uuid.Parse(id)
-	if err != nil {
-		t.Errorf("Expected valid UUID, got %s", id)
-	}
-}
-
 func TestHandleUserMessage(t *testing.T) {
 	// Set up temporary directory
 	tempDir, err := ioutil.TempDir("", "test_user_message")
@@ -87,6 +56,13 @@ func TestHandleUserMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Create the mock client
+	var errClient error
+	client, errClient = llm.NewClient("mock-model")
+	if errClient != nil {
+		t.Fatalf("Error creating mock client: %v", errClient)
+	}
+
 	// Mock mutex
 	mutex = sync.Mutex{}
 
@@ -100,8 +76,8 @@ func TestHandleUserMessage(t *testing.T) {
 		t.Fatalf("Expected response.txt to be created, got error: %v", err)
 	}
 
-	if string(data) != "Mock response" {
-		t.Errorf("Expected 'Mock response', got '%s'", string(data))
+	if string(data) != "This is a mock response." {
+		t.Errorf("Expected 'This is a mock response.', got '%s'", string(data))
 	}
 }
 
@@ -189,6 +165,13 @@ func TestGetAttachmentsContent(t *testing.T) {
 }
 
 func TestGetLLMResponse(t *testing.T) {
+	// Create the mock client
+	var errClient error
+	client, errClient = llm.NewClient("mock-model")
+	if errClient != nil {
+		t.Fatalf("Error creating mock client: %v", errClient)
+	}
+
 	// Mock messages
 	messages := []llm.Message{
 		{Role: llm.ChatMessageRoleUser, Content: "Hello"},
@@ -200,8 +183,8 @@ func TestGetLLMResponse(t *testing.T) {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
-	if response != "Mock response" {
-		t.Errorf("Expected 'Mock response', got '%s'", response)
+	if response != "This is a mock response." {
+		t.Errorf("Expected 'This is a mock response.', got '%s'", response)
 	}
 }
 

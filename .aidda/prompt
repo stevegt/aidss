@@ -16,13 +16,9 @@ Sysmsg: You are an expert Go programmer. Please make the requested changes
  to the given code or documentation.
 
 The goal is to be able to easily call different models, including a mock model for testing.  
-- do we really need a Models() method in Client interface?
-- move init() content to main()
-- maxTokens should be an attribute of a Model struct
-- possible that calls should be made to Model methods instead of Client methods
-- do not mock inside the OpenAI struct's methods -- that's the job of
-  the Mock struct methods
-- have each provider read API key from environment variable (don't do
-  it in main())
-- set up client based on the model name
-- remove MockLLMClient from main_test.go; use the mock model instead
+- get API key from env in provider constructor
+- provider constructor returns nil if API key is not set
+- ensure all test cases that need an LLM client use a mock-model client
+  (instead of creating a mock function in the test case)
+- do not mock inside openai.go that's the job of mock.go
+
