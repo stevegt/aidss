@@ -198,7 +198,7 @@ func parsePromptFile(filename string) (*Prompt, error) {
 		if colonIndex == -1 {
 			return nil, fmt.Errorf("Header line without colon")
 		}
-		currentHeader := strings.TrimSpace(line[:colonIndex])
+		currentHeader = strings.TrimSpace(line[:colonIndex])
 		value := strings.TrimSpace(line[colonIndex+1:])
 		currentValue.Reset()
 		currentValue.WriteString(value)
@@ -246,7 +246,7 @@ func handleUserMessage(path string, client llm.Client, watchPath string) {
 	}
 
 	// Read and include contents of InFiles
-	inFilesContent, err := readInFilesContent(prompt.InFiles, watchPath)
+	inFilesContent, err := readInFilesContent(prompt.InFiles, path)
 	if err != nil {
 		log.Println("Error reading In files:", err)
 		return
@@ -264,6 +264,13 @@ func handleUserMessage(path string, client llm.Client, watchPath string) {
 		Content: userContent,
 	})
 
+	// Save the full prompt message to prompt-full.txt
+	err = saveFullPrompt(path, contextMessages)
+	if err != nil {
+		log.Println("Error saving full prompt:", err)
+		return
+	}
+
 	response, err := getLLMResponse(contextMessages, client)
 	if err != nil {
 		log.Println("Error getting LLM response:", err)
@@ -280,17 +287,16 @@ func handleUserMessage(path string, client llm.Client, watchPath string) {
 	log.Println("LLM response written to:", responsePath)
 
 	// Parse the LLM response for updated files
-	err = processLLMResponse(response, prompt.OutFiles, watchPath)
+	err = processLLMResponse(response, prompt.OutFiles, path)
 	if err != nil {
 		log.Println("Error processing LLM response:", err)
 	}
 }
 
-func readInFilesContent(inFiles []string, watchPath string) (string, error) {
+func readInFilesContent(inFiles []string, currentPath string) (string, error) {
 	var contentBuilder strings.Builder
-	parentDir := filepath.Dir(watchPath)
 	for _, relPath := range inFiles {
-		absPath := filepath.Join(parentDir, relPath)
+		absPath := filepath.Join(currentPath, relPath)
 		data, err := ioutil.ReadFile(absPath)
 		if err != nil {
 			return "", fmt.Errorf("error reading file %s: %v", absPath, err)
@@ -300,9 +306,7 @@ func readInFilesContent(inFiles []string, watchPath string) (string, error) {
 	return contentBuilder.String(), nil
 }
 
-func processLLMResponse(response string, outFiles []string, watchPath string) error {
-	parentDir := filepath.Dir(watchPath)
-
+func processLLMResponse(response string, outFiles []string, currentPath string) error {
 	// Wrap the response in a root element to make it valid XML
 	wrappedResponse := "<root>" + response + "</root>"
 
@@ -336,11 +340,11 @@ func processLLMResponse(response string, outFiles []string, watchPath string) er
 		}
 
 		// Write the content to a temporary file
-		tmpPath := filepath.Join(parentDir, filename+".tmp")
+		tmpPath := filepath.Join(currentPath, filename+".tmp")
 		err := ioutil.WriteFile(tmpPath, []byte(content), 0644)
 		Ck(err)
 		// Rename the temporary file to the final filename
-		err = os.Rename(tmpPath, filepath.Join(parentDir, filename))
+		err = os.Rename(tmpPath, filepath.Join(currentPath, filename))
 		Ck(err)
 		log.Printf("Updated file written to: %s", filename)
 	}
@@ -383,7 +387,7 @@ func buildContextMessages(path string, watchPath string) []llm.Message {
 
 	// Build messages from collected paths
 	for _, p := range paths {
-		if content, err := ioutil.ReadFile(filepath.Join(p, promptFn)); err == nil {
+		if content, err := ioutil.ReadFile(filepath.Join(p, promptFullFn)); err == nil {
 			messages = append(messages, llm.Message{
 				Role:    llm.ChatMessageRoleUser,
 				Content: string(content),
@@ -400,26 +404,18 @@ func buildContextMessages(path string, watchPath string) []llm.Message {
 	return messages
 }
 
-func getAttachmentsContent(path string) (string, error) {
-	var contentBuilder strings.Builder
-
-	files, err := ioutil.ReadDir(path)
+// saveFullPrompt saves the full prompt message to prompt-full.txt
+func saveFullPrompt(path string, messages []llm.Message) error {
+	var builder strings.Builder
+	for _, msg := range messages {
+		builder.WriteString(fmt.Sprintf("%s: %s\n", strings.Title(msg.Role), msg.Content))
+	}
+	fullPromptPath := filepath.Join(path, promptFullFn)
+	err := ioutil.WriteFile(fullPromptPath, []byte(builder.String()), 0644)
 	if err != nil {
-		return "", err
+		return err
 	}
-
-	for _, file := range files {
-		if strings.HasSuffix(file.Name(), ".pdf.txt") {
-			attachmentContent, err := ioutil.ReadFile(filepath.Join(path, file.Name()))
-			if err != nil {
-				return "", err
-			}
-			// Delimit attachments with unique XML tags
-			contentBuilder.WriteString(fmt.Sprintf("<IN filename=\"%s\">\n%s\n</IN>\n", file.Name(), string(attachmentContent)))
-		}
-	}
-
-	return contentBuilder.String(), nil
+	return nil
 }
 
 func getLLMResponse(messages []llm.Message, client llm.Client) (string, error) {

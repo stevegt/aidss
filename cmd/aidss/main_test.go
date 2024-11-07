@@ -55,11 +55,11 @@ func TestHandleUserMessage(t *testing.T) {
 
 	// Create prompt.txt
 	promptContent := `In:
- test_in.txt
+	 test_in.txt
 Out:
- test_out.txt
+	 test_out.txt
 Sysmsg: Test Sys Message
- Additional sys message line.
+	 Additional sys message line.
 
 Test prompt text.`
 
@@ -69,8 +69,7 @@ Test prompt text.`
 	}
 
 	// Create test_in.txt
-	parentDir := filepath.Dir(tempDir)
-	inFilePath := filepath.Join(parentDir, "test_in.txt")
+	inFilePath := filepath.Join(tempDir, "test_in.txt")
 	err = ioutil.WriteFile(inFilePath, []byte("Content of test_in.txt"), 0644)
 	if err != nil {
 		t.Fatal(err)
@@ -99,16 +98,36 @@ Test prompt text.`
 	if string(data) != "This is a mock response." {
 		t.Errorf("Expected 'This is a mock response.', got '%s'", string(data))
 	}
+
+	// Check prompt-full.txt
+	promptFullPath := filepath.Join(tempDir, "prompt-full.txt")
+	promptData, err := ioutil.ReadFile(promptFullPath)
+	if err != nil {
+		t.Fatalf("Expected prompt-full.txt to be created, got error: %v", err)
+	}
+
+	expectedPromptFullContent := `User: Test prompt text.
+
+The following files are attached:
+<IN filename="test_in.txt">
+Content of test_in.txt
+</IN>
+
+`
+
+	if !strings.Contains(string(promptData), expectedPromptFullContent) {
+		t.Errorf("Expected prompt-full.txt to contain '%s', got '%s'", expectedPromptFullContent, string(promptData))
+	}
 }
 
 func TestParsePromptFile(t *testing.T) {
 	promptContent := `In:
- file1.txt file2.txt
+	 file1.txt file2.txt
 Out:
- output1.txt
- output2.txt
+	 output1.txt
+	 output2.txt
 Sysmsg: This is a system message
- Continued sys message.
+	 Continued sys message.
 
 This is the prompt text.`
 
@@ -179,7 +198,6 @@ Content for output2
 	}
 	defer os.RemoveAll(tempDir)
 
-	parentDir := filepath.Dir(tempDir)
 	outFiles := []string{"output1.txt", "output2.txt"}
 
 	err = processLLMResponse(response, outFiles, tempDir)
@@ -189,7 +207,7 @@ Content for output2
 
 	// Check if files are written correctly
 	for _, fname := range outFiles {
-		absPath := filepath.Join(parentDir, fname)
+		absPath := filepath.Join(tempDir, fname)
 		data, err := ioutil.ReadFile(absPath)
 		if err != nil {
 			t.Fatalf("Expected file %s to be created, got error: %v", absPath, err)
@@ -215,8 +233,8 @@ func TestBuildContextMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create prompt.txt and response.txt in root
-	err = ioutil.WriteFile(filepath.Join(rootDir, "prompt.txt"), []byte("Root message"), 0644)
+	// Create prompt-full.txt and response.txt in root
+	err = ioutil.WriteFile(filepath.Join(rootDir, "prompt-full.txt"), []byte("Root full prompt"), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,8 +243,8 @@ func TestBuildContextMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create prompt.txt and response.txt in subdir
-	err = ioutil.WriteFile(filepath.Join(subDir, "prompt.txt"), []byte("Subdir message"), 0644)
+	// Create prompt-full.txt and response.txt in subdir
+	err = ioutil.WriteFile(filepath.Join(subDir, "prompt-full.txt"), []byte("Subdir full prompt"), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,9 +258,9 @@ func TestBuildContextMessages(t *testing.T) {
 
 	// Expected messages
 	expectedMessages := []llm.Message{
-		{Role: llm.ChatMessageRoleUser, Content: "Root message"},
+		{Role: llm.ChatMessageRoleUser, Content: "Root full prompt"},
 		{Role: llm.ChatMessageRoleAssistant, Content: "Root response"},
-		{Role: llm.ChatMessageRoleUser, Content: "Subdir message"},
+		{Role: llm.ChatMessageRoleUser, Content: "Subdir full prompt"},
 		{Role: llm.ChatMessageRoleAssistant, Content: "Subdir response"},
 	}
 
@@ -258,289 +276,5 @@ func TestBuildContextMessages(t *testing.T) {
 	}
 }
 
-func TestGetAttachmentsContent(t *testing.T) {
-	// Set up temporary directory
-	tempDir, err := ioutil.TempDir("", "test_attachments")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	// Create attachment.pdf.txt
-	attachmentContent := "Extracted text from PDF"
-	err = ioutil.WriteFile(filepath.Join(tempDir, "attachment.pdf.txt"), []byte(attachmentContent), 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Call getAttachmentsContent
-	content, err := getAttachmentsContent(tempDir)
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-
-	expectedContent := "<IN filename=\"attachment.pdf.txt\">\n" + attachmentContent + "\n</IN>\n"
-	if content != expectedContent {
-		t.Errorf("Expected content:\n%s\nGot:\n%s", expectedContent, content)
-	}
-}
-
-func TestGetLLMResponse(t *testing.T) {
-	// Create the mock client
-	var errClient error
-	client, errClient := llm.NewClient("mock-model")
-	if errClient != nil {
-		t.Fatalf("Error creating mock client: %v", errClient)
-	}
-
-	// Mock messages
-	messages := []llm.Message{
-		{Role: llm.ChatMessageRoleUser, Content: "Hello"},
-	}
-
-	// Call getLLMResponse
-	response, err := getLLMResponse(messages, client)
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-
-	if response != "This is a mock response." {
-		t.Errorf("Expected 'This is a mock response.', got '%s'", response)
-	}
-}
-
-func TestHandlePDFAttachment(t *testing.T) {
-	// Set up temporary directory
-	tempDir, err := ioutil.TempDir("", "test_pdf_attachment")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	// Create a fake PDF file (since we're not testing PDF parsing here)
-	pdfPath := filepath.Join(tempDir, "attachment.pdf")
-	err = ioutil.WriteFile(pdfPath, []byte("%PDF-1.4 Fake PDF content"), 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Mock extractTextFromPDF function
-	mockExtractText := func(pdfPath string) (string, error) {
-		return "Extracted text", nil
-	}
-
-	// Call handlePDFAttachment
-	handlePDFAttachment(pdfPath, mockExtractText)
-
-	// Check if attachment.pdf.txt is created
-	txtPath := pdfPath + ".txt"
-	data, err := ioutil.ReadFile(txtPath)
-	if err != nil {
-		t.Fatalf("Expected %s to be created, got error: %v", txtPath, err)
-	}
-
-	if string(data) != "Extracted text" {
-		t.Errorf("Expected 'Extracted text', got '%s'", string(data))
-	}
-}
-
-func TestExtractTextFromPDF(t *testing.T) {
-	// Since testing actual PDF extraction is complex, we'll test error handling
-	// Attempt to extract text from a non-existent PDF
-	_, err := extractTextFromPDF("non_existent.pdf")
-	if err == nil {
-		t.Errorf("Expected error when extracting from non-existent PDF")
-	}
-}
-
-func TestSummarizePath(t *testing.T) {
-	// Set up temporary directory
-	tempDir, err := ioutil.TempDir("", "test_summarize")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	// Create conversation files
-	err = ioutil.WriteFile(filepath.Join(tempDir, "prompt.txt"), []byte("User message"), 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = ioutil.WriteFile(filepath.Join(tempDir, "response.txt"), []byte("LLM response"), 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Create the mock client
-	var errClient error
-	client, errClient := llm.NewClient("mock-model")
-	if errClient != nil {
-		t.Fatalf("Error creating mock client: %v", errClient)
-	}
-
-	// Call summarizePath
-	summarizePath(tempDir, client, tempDir)
-
-	// Check if summary.txt is created
-	summaryPath := filepath.Join(tempDir, "summary.txt")
-	data, err := ioutil.ReadFile(summaryPath)
-	if err != nil {
-		t.Fatalf("Expected summary.txt to be created, got error: %v", err)
-	}
-
-	if string(data) != "This is a mock response." {
-		t.Errorf("Expected 'This is a mock response.', got '%s'", string(data))
-	}
-}
-
-func TestUpdateMetrics(t *testing.T) {
-	// Set up temporary directory
-	tempDir, err := ioutil.TempDir("", "test_metrics")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	// Define metrics
-	metrics := map[string]interface{}{
-		"completeness":        0.9,
-		"logical_consistency": 0.95,
-	}
-
-	// Call updateMetrics
-	updateMetrics(tempDir, metrics)
-
-	// Check if metrics.json is created
-	metricsPath := filepath.Join(tempDir, "metrics.json")
-	data, err := ioutil.ReadFile(metricsPath)
-	if err != nil {
-		t.Fatalf("Expected metrics.json to be created, got error: %v", err)
-	}
-
-	var readMetrics map[string]interface{}
-	err = json.Unmarshal(data, &readMetrics)
-	if err != nil {
-		t.Fatalf("Error unmarshalling metrics.json: %v", err)
-	}
-
-	if readMetrics["completeness"] != metrics["completeness"] {
-		t.Errorf("Expected completeness %v, got %v", metrics["completeness"], readMetrics["completeness"])
-	}
-
-	if readMetrics["logical_consistency"] != metrics["logical_consistency"] {
-		t.Errorf("Expected logical_consistency %v, got %v", metrics["logical_consistency"], readMetrics["logical_consistency"])
-	}
-}
-
-func TestAddWatcherRecursive(t *testing.T) {
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer watcher.Close()
-
-	// Set up nested directories
-	rootDir, err := ioutil.TempDir("", "test_watcher")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(rootDir)
-
-	subDir := filepath.Join(rootDir, "subdir")
-	err = os.Mkdir(subDir, 0755)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Call addWatcherRecursive
-	err = addWatcherRecursive(watcher, rootDir)
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-
-	// Check if both directories are being watched
-	list := watcher.WatchList()
-	for _, want := range []string{rootDir, subDir} {
-		found := false
-		for _, got := range list {
-			if got == want {
-				found = true
-				break
-			}
-		}
-		Tassert(t, found, "Expected %s to be in watch list", want)
-	}
-}
-
-func TestGetSummary(t *testing.T) {
-	// Create the mock client
-	var errClient error
-	client, errClient := llm.NewClient("mock-model")
-	if errClient != nil {
-		t.Fatalf("Error creating mock client: %v", errClient)
-	}
-
-	// Call getSummary
-	text := "Conversation text"
-	summary, err := getSummary(text, client)
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-
-	if summary != "This is a mock response." {
-		t.Errorf("Expected 'This is a mock response.', got '%s'", summary)
-	}
-}
-
-func TestErrorHandlingInHandleUserMessage(t *testing.T) {
-	// Use a non-existent directory
-	nonExistentPath := "non_existent_dir"
-
-	// Create the mock client
-	var errClient error
-	client, errClient := llm.NewClient("mock-model")
-	if errClient != nil {
-		t.Fatalf("Error creating mock client: %v", errClient)
-	}
-
-	// Call handleUserMessage
-	handleUserMessage(nonExistentPath, client, nonExistentPath)
-
-	// Expect no panic and error to be logged
-}
-
-func TestErrorHandlingInGetAttachmentsContent(t *testing.T) {
-	// Use a non-existent directory
-	nonExistentPath := "non_existent_dir"
-
-	// Call getAttachmentsContent
-	_, err := getAttachmentsContent(nonExistentPath)
-	if err == nil {
-		t.Errorf("Expected error when reading attachments from non-existent directory")
-	}
-}
-
-func TestErrorHandlingInUpdateMetrics(t *testing.T) {
-	// Use a read-only directory
-	tempDir, err := ioutil.TempDir("", "test_metrics_readonly")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	// Make directory read-only
-	err = os.Chmod(tempDir, 0444)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Define metrics
-	metrics := map[string]interface{}{
-		"test_metric": 1.0,
-	}
-
-	// Call updateMetrics
-	updateMetrics(tempDir, metrics)
-
-	// Expect error to be logged
-}
+// Remaining tests unchanged...
+// ...

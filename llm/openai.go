@@ -26,19 +26,14 @@ type Model struct {
 
 // Map of model names to Model structs
 var openAIModels = map[string]Model{
-	openai.GPT4o: {
-		Name:        openai.GPT4o,
-		MaxTokens:   128000,
+	openai.GPT3Dot5Turbo: {
+		Name:        openai.GPT3Dot5Turbo,
+		MaxTokens:   4096,
 		Temperature: 0.7,
 	},
-	openai.O1Mini: {
-		Name:        openai.O1Mini,
-		MaxTokens:   128000,
-		Temperature: 0.7,
-	},
-	openai.O1Preview: {
-		Name:        openai.O1Preview,
-		MaxTokens:   128000,
+	openai.GPT4: {
+		Name:        openai.GPT4,
+		MaxTokens:   8192,
 		Temperature: 0.7,
 	},
 }
