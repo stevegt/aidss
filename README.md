@@ -1,4 +1,4 @@
-# Decision Support Tool
+# AIDSS -- AI-based Decision Support Tool
 
 A command-line tool that provides a decision support system using a filesystem-based decision tree, integrated with Large Language Models (LLMs) via OpenAI's API. The tool monitors a directory structure, processes user messages, handles attachments (like PDFs), and interacts with an LLM to generate responses, summaries, and metrics.
 
